@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1775819158615-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_templates
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: name
+                  type: TEXT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content
+                  type: TEXT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: account_id
+                  type: BIGINT
+            tableName: templates
+  - changeSet:
+      id: 1775819158615-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: templates
+            constraintName: FK_TEMPLATES_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+

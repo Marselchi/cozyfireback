@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: modify-varchars-to-text
+      author: Марсель
+      changes:
+        - modifyDataType:
+            tableName: lore
+            columnName: content
+            newDataType: TEXT

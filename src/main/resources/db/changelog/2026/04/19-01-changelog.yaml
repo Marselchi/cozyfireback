@@ -1,0 +1,182 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1776626394009-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_notifications
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: account_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: type
+                  type: VARCHAR(32)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: event_code
+                  type: SMALLINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: title
+                  type: TEXT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: body
+                  type: TEXT
+              - column:
+                  name: lore_id
+                  type: BIGINT
+              - column:
+                  name: character_id
+                  type: BIGINT
+              - column:
+                  name: read_at
+                  type: DATETIME
+              - column:
+                  constraints:
+                    nullable: false
+                  name: created_at
+                  type: DATETIME
+            tableName: notifications
+  - changeSet:
+      id: 1776626394009-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_room_notification_settings
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: account_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content_all_ws
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content_all_push
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content_dm_only_ws
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content_dm_only_push
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content_updated_ws
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content_updated_push
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: qa_new_question_ws
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: qa_new_question_push
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: qa_answered_ws
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: qa_answered_push
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: qa_answer_to_answer_ws
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                  name: qa_answer_to_answer_push
+                  type: BOOLEAN
+            tableName: room_notification_settings
+  - changeSet:
+      id: 1776626394009-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: account_id
+            constraintName: uk_room_notification_settings_account
+            tableName: room_notification_settings
+  - changeSet:
+      id: 1776626394009-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createIndex:
+            columns:
+              - column:
+                  name: account_id
+              - column:
+                  name: created_at
+            indexName: idx_notifications_account_created
+            tableName: notifications
+  - changeSet:
+      id: 1776626394009-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: notifications
+            constraintName: FK_NOTIFICATIONS_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1776626394009-6
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: room_notification_settings
+            constraintName: FK_ROOM_NOTIFICATION_SETTINGS_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+

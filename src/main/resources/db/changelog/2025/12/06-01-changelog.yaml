@@ -1,0 +1,49 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1765046113818-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_roomdetails
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: situation
+                  type: VARCHAR(255)
+              - column:
+                  name: date
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: room_id
+                  type: BIGINT
+            tableName: room_details
+  - changeSet:
+      id: 1765046113818-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: room_id
+            constraintName: uc_roomdetails_room
+            tableName: room_details
+  - changeSet:
+      id: 1765046113818-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: room_details
+            constraintName: FK_ROOMDETAILS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: room
+

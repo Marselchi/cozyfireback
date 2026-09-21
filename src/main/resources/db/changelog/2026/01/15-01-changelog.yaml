@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1768498748406-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_invitations
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: code
+                  type: VARCHAR(255)
+              - column:
+                  name: room_id
+                  type: BIGINT
+            tableName: invitations
+  - changeSet:
+      id: 1768498748406-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: invitations
+            constraintName: FK_INVITATIONS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+

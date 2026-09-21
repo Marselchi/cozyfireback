@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1777822239163-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addColumn:
+            columns:
+              - column:
+                  name: profile_id
+                  type: BIGINT
+            tableName: fcm_tokens
+  - changeSet:
+      id: 1777822239163-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addNotNullConstraint:
+            columnName: profile_id
+            tableName: fcm_tokens
+  - changeSet:
+      id: 1777822239163-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: profile_id
+            baseTableName: fcm_tokens
+            constraintName: FK_FCM_TOKENS_ON_PROFILE
+            referencedColumnNames: id
+            referencedTableName: profiles
+  - changeSet:
+      id: 1777822239163-26
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropColumn:
+            columnName: account_id
+            tableName: fcm_tokens
+

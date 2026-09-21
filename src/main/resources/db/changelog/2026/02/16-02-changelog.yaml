@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-02-16-recreate-content-as-text
+      author: Марсель
+      comment: "Создание колонки content типа text, если она отсутствует"
+      preConditions:
+        - onFail: MARK_RAN
+        - not:
+            columnExists:
+              tableName: lore
+              columnName: content
+      changes:
+        - addColumn:
+            tableName: lore
+            columns:
+              - column:
+                  name: content
+                  type: text
+                  defaultValue: "" # Временное значение, чтобы избежать ошибок NOT NULL при создании
+        # Если колонка должна быть NOT NULL, добавляем ограничение отдельным шагом после заполнения
+        - addNotNullConstraint:
+            tableName: lore
+            columnName: content
+            defaultNullValue: ""

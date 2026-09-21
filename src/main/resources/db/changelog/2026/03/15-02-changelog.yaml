@@ -1,0 +1,282 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-performance-indexes-march-2026
+      author: Марсель
+      changes:
+        - createIndex:
+            tableName: rooms
+            indexName: idx_rooms_url
+            unique: false
+            columns:
+              - column:
+                  name: url
+
+        - createIndex:
+            tableName: rooms
+            indexName: idx_rooms_creator_account_id
+            unique: false
+            columns:
+              - column:
+                  name: creator_account_id
+
+        - createIndex:
+            tableName: accounts
+            indexName: idx_accounts_profile_id
+            unique: false
+            columns:
+              - column:
+                  name: profile_id
+
+        - createIndex:
+            tableName: accounts
+            indexName: idx_accounts_room_id
+            unique: false
+            columns:
+              - column:
+                  name: room_id
+
+        - createIndex:
+            tableName: accounts
+            indexName: idx_accounts_room_id_profile_id
+            unique: false
+            columns:
+              - column:
+                  name: room_id
+              - column:
+                  name: profile_id
+
+        - createIndex:
+            tableName: profiles
+            indexName: idx_profiles_username
+            unique: false
+            columns:
+              - column:
+                  name: username
+
+        - createIndex:
+            tableName: profiles
+            indexName: idx_profiles_email
+            unique: false
+            columns:
+              - column:
+                  name: email
+
+        - createIndex:
+            tableName: questions
+            indexName: idx_questions_author_id
+            unique: false
+            columns:
+              - column:
+                  name: author_id
+
+        - createIndex:
+            tableName: questions
+            indexName: idx_questions_room_filter
+            unique: false
+            columns:
+              - column:
+                  name: author_id
+              - column:
+                  name: category
+              - column:
+                  name: is_answered
+
+        - createIndex:
+            tableName: questions
+            indexName: idx_questions_lore_id
+            unique: false
+            columns:
+              - column:
+                  name: lore_id
+
+        - createIndex:
+            tableName: questions
+            indexName: idx_questions_is_answered
+            unique: false
+            columns:
+              - column:
+                  name: is_answered
+
+        - createIndex:
+            tableName: answers
+            indexName: idx_answers_question_id
+            unique: false
+            columns:
+              - column:
+                  name: question_id
+
+        - createIndex:
+            tableName: answers
+            indexName: idx_answers_parent_id
+            unique: false
+            columns:
+              - column:
+                  name: parent_id
+
+        - createIndex:
+            tableName: answers
+            indexName: idx_answers_author_id
+            unique: false
+            columns:
+              - column:
+                  name: author_id
+
+        - createIndex:
+            tableName: lore
+            indexName: idx_lore_account_id
+            unique: false
+            columns:
+              - column:
+                  name: account_id
+
+        - createIndex:
+            tableName: lore
+            indexName: idx_lore_account_room
+            unique: false
+            columns:
+              - column:
+                  name: account_id
+
+        - createIndex:
+            tableName: roles
+            indexName: idx_roles_room_id
+            unique: false
+            columns:
+              - column:
+                  name: room_id
+
+        - createIndex:
+            tableName: tags
+            indexName: idx_tags_room_id
+            unique: false
+            columns:
+              - column:
+                  name: room_id
+
+        - createIndex:
+            tableName: invitations
+            indexName: idx_invitations_code
+            unique: false
+            columns:
+              - column:
+                  name: code
+
+        - createIndex:
+            tableName: invitations
+            indexName: idx_invitations_room_id
+            unique: false
+            columns:
+              - column:
+                  name: room_id
+
+        - createIndex:
+            tableName: refresh_tokens
+            indexName: idx_refresh_tokens_token
+            unique: false
+            columns:
+              - column:
+                  name: token
+
+        - createIndex:
+            tableName: refresh_tokens
+            indexName: idx_refresh_tokens_profile_id
+            unique: false
+            columns:
+              - column:
+                  name: profile_id
+
+        - createIndex:
+            tableName: lore_view
+            indexName: idx_lore_view_lore_id
+            unique: false
+            columns:
+              - column:
+                  name: lore_id
+
+        - createIndex:
+            tableName: lore_view
+            indexName: idx_lore_view_account_id
+            unique: false
+            columns:
+              - column:
+                  name: account_id
+
+        - createIndex:
+            tableName: account_roles
+            indexName: idx_account_roles_account_id
+            unique: false
+            columns:
+              - column:
+                  name: account_id
+
+        - createIndex:
+            tableName: account_roles
+            indexName: idx_account_roles_role_id
+            unique: false
+            columns:
+              - column:
+                  name: role_id
+
+        - createIndex:
+            tableName: lore_roles
+            indexName: idx_lore_roles_lore_id
+            unique: false
+            columns:
+              - column:
+                  name: lore_id
+
+        - createIndex:
+            tableName: lore_roles
+            indexName: idx_lore_roles_role_id
+            unique: false
+            columns:
+              - column:
+                  name: role_id
+
+        - createIndex:
+            tableName: lore_tags
+            indexName: idx_lore_tags_lore_id
+            unique: false
+            columns:
+              - column:
+                  name: lore_id
+
+        - createIndex:
+            tableName: lore_tags
+            indexName: idx_lore_tags_tag_id
+            unique: false
+            columns:
+              - column:
+                  name: tag_id
+
+        - createIndex:
+            tableName: room_details
+            indexName: idx_room_details_room_id
+            unique: false
+            columns:
+              - column:
+                  name: room_id
+
+  - changeSet:
+      id: add-pg-trgm-extension-for-text-search
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - dbms:
+            type: postgresql
+      changes:
+        - sql:
+            sql: CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+  - changeSet:
+      id: add-fulltext-search-indexes-optional
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - dbms:
+            type: postgresql
+      changes:
+        - sql:
+            sql: |
+              CREATE INDEX IF NOT EXISTS idx_lore_title_trgm ON lore USING gin(title gin_trgm_ops);
+              CREATE INDEX IF NOT EXISTS idx_questions_title_trgm ON questions USING gin(title gin_trgm_ops);

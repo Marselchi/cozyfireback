@@ -1,0 +1,146 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1768310909889-8
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: accounts
+            constraintName: fk_accounts_on_room
+  - changeSet:
+      id: 1768310909889-9
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: roles
+            constraintName: fk_roles_on_room
+  - changeSet:
+      id: 1768310909889-10
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: room
+            constraintName: fk_room_on_creator_account
+  - changeSet:
+      id: 1768310909889-11
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: room_details
+            constraintName: fk_roomdetails_on_room
+  - changeSet:
+      id: 1768310909889-12
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: tags
+            constraintName: fk_tags_on_room
+  - changeSet:
+      id: 1768310909889-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_rooms
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  name: description
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: creator_account_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: url
+                  type: VARCHAR(255)
+            tableName: rooms
+  - changeSet:
+      id: 1768310909889-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: url
+            constraintName: uc_rooms_url
+            tableName: rooms
+  - changeSet:
+      id: 1768310909889-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: accounts
+            constraintName: FK_ACCOUNTS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768310909889-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: roles
+            constraintName: FK_ROLES_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768310909889-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: room_details
+            constraintName: FK_ROOMDETAILS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768310909889-6
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: creator_account_id
+            baseTableName: rooms
+            constraintName: FK_ROOMS_ON_CREATOR_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1768310909889-7
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: tags
+            constraintName: FK_TAGS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768310909889-14
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropTable:
+            cascadeConstraints: true
+            tableName: room
+

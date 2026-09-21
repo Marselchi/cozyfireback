@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: convert-answers-content-to-text
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - modifyDataType:
+            tableName: answers
+            columnName: content
+            newDataType: TEXT

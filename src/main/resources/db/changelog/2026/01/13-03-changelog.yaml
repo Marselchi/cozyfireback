@@ -1,0 +1,517 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1768311470347-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_account_roles
+                  name: account_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_account_roles
+                  name: role_id
+                  type: BIGINT
+            tableName: account_roles
+  - changeSet:
+      id: 1768311470347-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_accounts
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  name: profile_id
+                  type: BIGINT
+              - column:
+                  name: room_id
+                  type: BIGINT
+            tableName: accounts
+  - changeSet:
+      id: 1768311470347-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: title
+                  type: VARCHAR(100)
+              - column:
+                  name: description
+                  type: VARCHAR(255)
+              - column:
+                  name: date
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content
+                  type: VARCHAR(255)
+              - column:
+                  name: account_id
+                  type: BIGINT
+            tableName: lore
+  - changeSet:
+      id: 1768311470347-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore_roles
+                  name: lore_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore_roles
+                  name: role_id
+                  type: BIGINT
+            tableName: lore_roles
+  - changeSet:
+      id: 1768311470347-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore_tags
+                  name: lore_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore_tags
+                  name: tag_id
+                  type: BIGINT
+            tableName: lore_tags
+  - changeSet:
+      id: 1768311470347-6
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_profiles
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: email
+                  type: VARCHAR(255)
+              - column:
+                  name: username
+                  type: VARCHAR(20)
+              - column:
+                  name: password
+                  type: VARCHAR(255)
+            tableName: profiles
+  - changeSet:
+      id: 1768311470347-7
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_refresh_tokens
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: token
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: profile_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: expiry_date
+                  type: DATETIME
+              - column:
+                  constraints:
+                    nullable: false
+                  name: active
+                  type: BOOLEAN
+            tableName: refresh_tokens
+  - changeSet:
+      id: 1768311470347-8
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_roles
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: room_id
+                  type: BIGINT
+            tableName: roles
+  - changeSet:
+      id: 1768311470347-9
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_roomdetails
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: situation
+                  type: VARCHAR(255)
+              - column:
+                  name: date
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: room_id
+                  type: BIGINT
+            tableName: room_details
+  - changeSet:
+      id: 1768311470347-10
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_rooms
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  name: description
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: creator_account_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: url
+                  type: VARCHAR(255)
+            tableName: rooms
+  - changeSet:
+      id: 1768311470347-11
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_tags
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: room_id
+                  type: BIGINT
+            tableName: tags
+  - changeSet:
+      id: 1768311470347-12
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: email
+            constraintName: uc_50b0a173b915fb398619b0f7b
+            tableName: profiles
+  - changeSet:
+      id: 1768311470347-13
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: username
+            constraintName: uc_5433944512856ca97139d2781
+            tableName: profiles
+  - changeSet:
+      id: 1768311470347-14
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: token
+            constraintName: uc_refresh_tokens_token
+            tableName: refresh_tokens
+  - changeSet:
+      id: 1768311470347-15
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: room_id, name
+            constraintName: uc_room_role
+            tableName: roles
+  - changeSet:
+      id: 1768311470347-16
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: room_id, name
+            constraintName: uc_room_tag
+            tableName: tags
+  - changeSet:
+      id: 1768311470347-17
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: room_id
+            constraintName: uc_roomdetails_room
+            tableName: room_details
+  - changeSet:
+      id: 1768311470347-18
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: url
+            constraintName: uc_rooms_url
+            tableName: rooms
+  - changeSet:
+      id: 1768311470347-19
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: profile_id
+            baseTableName: accounts
+            constraintName: FK_ACCOUNTS_ON_PROFILE
+            referencedColumnNames: id
+            referencedTableName: profiles
+  - changeSet:
+      id: 1768311470347-20
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: accounts
+            constraintName: FK_ACCOUNTS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768311470347-21
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: lore
+            constraintName: FK_LORE_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1768311470347-22
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: profile_id
+            baseTableName: refresh_tokens
+            constraintName: FK_REFRESH_TOKENS_ON_PROFILE
+            referencedColumnNames: id
+            referencedTableName: profiles
+  - changeSet:
+      id: 1768311470347-23
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: roles
+            constraintName: FK_ROLES_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768311470347-24
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: room_details
+            constraintName: FK_ROOMDETAILS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768311470347-25
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: creator_account_id
+            baseTableName: rooms
+            constraintName: FK_ROOMS_ON_CREATOR_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1768311470347-26
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: room_id
+            baseTableName: tags
+            constraintName: FK_TAGS_ON_ROOM
+            referencedColumnNames: id
+            referencedTableName: rooms
+  - changeSet:
+      id: 1768311470347-27
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: account_roles
+            constraintName: fk_accrol_on_account
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1768311470347-28
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: role_id
+            baseTableName: account_roles
+            constraintName: fk_accrol_on_role
+            referencedColumnNames: id
+            referencedTableName: roles
+  - changeSet:
+      id: 1768311470347-29
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: lore_id
+            baseTableName: lore_tags
+            constraintName: fk_lore_tags_on_lore
+            referencedColumnNames: id
+            referencedTableName: lore
+  - changeSet:
+      id: 1768311470347-30
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: tag_id
+            baseTableName: lore_tags
+            constraintName: fk_lore_tags_on_tag
+            referencedColumnNames: id
+            referencedTableName: tags
+  - changeSet:
+      id: 1768311470347-31
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: lore_id
+            baseTableName: lore_roles
+            constraintName: fk_lorrol_on_lore
+            referencedColumnNames: id
+            referencedTableName: lore
+  - changeSet:
+      id: 1768311470347-32
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: role_id
+            baseTableName: lore_roles
+            constraintName: fk_lorrol_on_role
+            referencedColumnNames: id
+            referencedTableName: roles
+

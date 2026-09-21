@@ -1,0 +1,16 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-03-17-add-cascade-delete-questions-on-lore
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: questions
+            constraintName: FK_QUESTIONS_ON_LORE
+        - addForeignKeyConstraint:
+            baseColumnNames: lore_id
+            baseTableName: questions
+            constraintName: FK_QUESTIONS_ON_LORE
+            referencedColumnNames: id
+            referencedTableName: lore
+            onDelete: CASCADE

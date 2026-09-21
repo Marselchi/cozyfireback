@@ -1,0 +1,435 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1787482270035-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_access_record
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: block_id
+                  type: BIGINT
+              - column:
+                  name: account_char_id
+                  type: BIGINT
+              - column:
+                  name: status
+                  type: VARCHAR(255)
+              - column:
+                  name: roll_value
+                  type: INT
+            tableName: access_record
+  - changeSet:
+      id: 1787482270035-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_account_char_skills
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: account_char_id
+                  type: BIGINT
+              - column:
+                  name: skill_key
+                  type: VARCHAR(255)
+              - column:
+                  name: proficiency
+                  type: INT
+              - column:
+                  name: modifier
+                  type: INT
+            tableName: account_char_skills
+  - changeSet:
+      id: 1787482270035-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_account_char_stats
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: account_char_id
+                  type: BIGINT
+              - column:
+                  name: stat_key
+                  type: VARCHAR(255)
+              - column:
+                  name: score
+                  type: INT
+              - column:
+                  name: modifier
+                  type: INT
+            tableName: account_char_stats
+  - changeSet:
+      id: 1787482270035-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_account_chars
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: name
+                  type: VARCHAR(255)
+              - column:
+                  name: version
+                  type: INT
+              - column:
+                  name: race
+                  type: VARCHAR(255)
+              - column:
+                  name: origin
+                  type: VARCHAR(255)
+              - column:
+                  name: character_class
+                  type: VARCHAR(255)
+              - column:
+                  name: level
+                  type: INT
+            tableName: account_chars
+  - changeSet:
+      id: 1787482270035-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_block
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: content
+                  type: TEXT
+              - column:
+                  name: lore_id
+                  type: BIGINT
+            tableName: block
+  - changeSet:
+      id: 1787482270035-6
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_block_roles
+                  name: block_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_block_roles
+                  name: role_id
+                  type: BIGINT
+            tableName: block_roles
+  - changeSet:
+      id: 1787482270035-7
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_chance_config
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: threshold
+                  type: INT
+              - column:
+                  name: skill_key
+                  type: VARCHAR(255)
+              - column:
+                  name: block_id
+                  type: BIGINT
+            tableName: chance_config
+  - changeSet:
+      id: 1787482270035-8
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_skill
+                  name: key
+                  type: VARCHAR(255)
+              - column:
+                  name: label
+                  type: VARCHAR(255)
+              - column:
+                  name: system
+                  type: VARCHAR(255)
+              - column:
+                  name: stat_key
+                  type: VARCHAR(255)
+            tableName: skill
+  - changeSet:
+      id: 1787482270035-9
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_stats
+                  name: key
+                  type: VARCHAR(255)
+              - column:
+                  name: label
+                  type: VARCHAR(255)
+              - column:
+                  name: system
+                  type: VARCHAR(255)
+            tableName: stats
+  - changeSet:
+      id: 1787482270035-10
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addColumn:
+            columns:
+              - column:
+                  name: account_char_id
+                  type: BIGINT
+            tableName: accounts
+  - changeSet:
+      id: 1787482270035-11
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: block_id, account_char_id
+            constraintName: uc_327c4fe3e499c828590ba5c7a
+            tableName: access_record
+  - changeSet:
+      id: 1787482270035-12
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: account_char_id, skill_key
+            constraintName: uc_68ca3944953cf17ed529ec200
+            tableName: account_char_skills
+  - changeSet:
+      id: 1787482270035-13
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: account_char_id
+            constraintName: uc_accounts_account_char
+            tableName: accounts
+  - changeSet:
+      id: 1787482270035-14
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: account_char_id, stat_key
+            constraintName: uc_ae7029f9afb76cfd4fdc4822c
+            tableName: account_char_stats
+  - changeSet:
+      id: 1787482270035-15
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: block_id
+            constraintName: uc_chance_config_block
+            tableName: chance_config
+  - changeSet:
+      id: 1787482270035-16
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_char_id
+            baseTableName: access_record
+            constraintName: FK_ACCESS_RECORD_ON_ACCOUNT_CHAR
+            referencedColumnNames: id
+            referencedTableName: account_chars
+  - changeSet:
+      id: 1787482270035-17
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: block_id
+            baseTableName: access_record
+            constraintName: FK_ACCESS_RECORD_ON_BLOCK
+            referencedColumnNames: id
+            referencedTableName: block
+  - changeSet:
+      id: 1787482270035-18
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_char_id
+            baseTableName: accounts
+            constraintName: FK_ACCOUNTS_ON_ACCOUNT_CHAR
+            referencedColumnNames: id
+            referencedTableName: account_chars
+  - changeSet:
+      id: 1787482270035-19
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_char_id
+            baseTableName: account_char_skills
+            constraintName: FK_ACCOUNT_CHAR_SKILLS_ON_ACCOUNT_CHAR
+            referencedColumnNames: id
+            referencedTableName: account_chars
+  - changeSet:
+      id: 1787482270035-20
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: skill_key
+            baseTableName: account_char_skills
+            constraintName: FK_ACCOUNT_CHAR_SKILLS_ON_SKILL_KEY
+            referencedColumnNames: key
+            referencedTableName: skill
+  - changeSet:
+      id: 1787482270035-21
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_char_id
+            baseTableName: account_char_stats
+            constraintName: FK_ACCOUNT_CHAR_STATS_ON_ACCOUNT_CHAR
+            referencedColumnNames: id
+            referencedTableName: account_chars
+  - changeSet:
+      id: 1787482270035-22
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: stat_key
+            baseTableName: account_char_stats
+            constraintName: FK_ACCOUNT_CHAR_STATS_ON_STAT_KEY
+            referencedColumnNames: key
+            referencedTableName: stats
+  - changeSet:
+      id: 1787482270035-23
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: lore_id
+            baseTableName: block
+            constraintName: FK_BLOCK_ON_LORE
+            referencedColumnNames: id
+            referencedTableName: lore
+  - changeSet:
+      id: 1787482270035-24
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: block_id
+            baseTableName: chance_config
+            constraintName: FK_CHANCE_CONFIG_ON_BLOCK
+            referencedColumnNames: id
+            referencedTableName: block
+  - changeSet:
+      id: 1787482270035-25
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: skill_key
+            baseTableName: chance_config
+            constraintName: FK_CHANCE_CONFIG_ON_SKILL_KEY
+            referencedColumnNames: key
+            referencedTableName: skill
+  - changeSet:
+      id: 1787482270035-26
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: stat_key
+            baseTableName: skill
+            constraintName: FK_SKILL_ON_STAT_KEY
+            referencedColumnNames: key
+            referencedTableName: stats
+  - changeSet:
+      id: 1787482270035-27
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: block_id
+            baseTableName: block_roles
+            constraintName: fk_blorol_on_block
+            referencedColumnNames: id
+            referencedTableName: block
+  - changeSet:
+      id: 1787482270035-28
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: role_id
+            baseTableName: block_roles
+            constraintName: fk_blorol_on_role
+            referencedColumnNames: id
+            referencedTableName: roles
+

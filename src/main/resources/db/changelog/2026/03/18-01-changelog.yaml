@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1773856618957-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_sessions
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: creator_account_id
+                  type: BIGINT
+              - column:
+                  name: time
+                  type: DATETIME
+              - column:
+                  name: description
+                  type: TEXT
+            tableName: sessions
+  - changeSet:
+      id: 1773856618957-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: creator_account_id
+            baseTableName: sessions
+            constraintName: FK_SESSIONS_ON_CREATOR_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+

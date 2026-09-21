@@ -1,0 +1,96 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1777300770355-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: room_notification_settings
+            constraintName: fk_room_notification_settings_on_account
+  - changeSet:
+      id: 1777300770355-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_notification_preferences
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: account_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: event_code
+                  type: VARCHAR(32)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: channel
+                  type: VARCHAR(16)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: enabled
+                  type: BOOLEAN
+            tableName: notification_preferences
+  - changeSet:
+      id: 1777300770355-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addColumn:
+            columns:
+              - column:
+                  name: route
+                  type: VARCHAR(255)
+            tableName: notifications
+  - changeSet:
+      id: 1777300770355-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: account_id, event_code, channel
+            constraintName: uc_701ac242764fbd8afad46597f
+            tableName: notification_preferences
+  - changeSet:
+      id: 1777300770355-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: notification_preferences
+            constraintName: FK_NOTIFICATION_PREFERENCES_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1777300770355-7
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropTable:
+            cascadeConstraints: true
+            tableName: room_notification_settings
+  - changeSet:
+      id: 1777300770355-30
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropColumn:
+            columnName: character_id
+            tableName: notifications
+        - dropColumn:
+            columnName: lore_id
+            tableName: notifications
+

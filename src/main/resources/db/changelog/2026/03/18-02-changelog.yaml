@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: 2026-03-18-convert-datetime-to-timestamptz
+      author: Марсель
+      comment: "Конвертация колонок в TIMESTAMP WITH TIME ZONE для корректной работы с Instant и UTC"
+      changes:
+        # Session.time
+        - modifyDataType:
+            tableName: sessions
+            columnName: time
+            newDataType: TIMESTAMP WITH TIME ZONE
+
+        # Question.created_at, Question.updated_at
+        - modifyDataType:
+            tableName: questions
+            columnName: created_at
+            newDataType: TIMESTAMP WITH TIME ZONE
+        - modifyDataType:
+            tableName: questions
+            columnName: updated_at
+            newDataType: TIMESTAMP WITH TIME ZONE
+
+        # Answer.created_at, Answer.updated_at
+        - modifyDataType:
+            tableName: answers
+            columnName: created_at
+            newDataType: TIMESTAMP WITH TIME ZONE
+        - modifyDataType:
+            tableName: answers
+            columnName: updated_at
+            newDataType: TIMESTAMP WITH TIME ZONE
+
+        # RefreshToken.expiry_date
+        - modifyDataType:
+            tableName: refresh_tokens
+            columnName: expiry_date
+            newDataType: TIMESTAMP WITH TIME ZONE

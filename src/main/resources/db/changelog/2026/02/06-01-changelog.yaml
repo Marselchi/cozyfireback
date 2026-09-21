@@ -1,0 +1,135 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1770373873452-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_answers
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: content
+                  type: TEXT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: author_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: created_at
+                  type: DATETIME
+              - column:
+                  name: updated_at
+                  type: DATETIME
+              - column:
+                  constraints:
+                    nullable: false
+                  name: question_id
+                  type: BIGINT
+              - column:
+                  name: parent_id
+                  type: BIGINT
+            tableName: answers
+  - changeSet:
+      id: 1770373873452-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_questions
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: title
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: body
+                  type: TEXT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: author_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: created_at
+                  type: DATETIME
+              - column:
+                  name: updated_at
+                  type: DATETIME
+              - column:
+                  constraints:
+                    nullable: false
+                  name: is_answered
+                  type: BOOLEAN
+              - column:
+                  name: category
+                  type: INT
+            tableName: questions
+  - changeSet:
+      id: 1770373873452-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: author_id
+            baseTableName: answers
+            constraintName: FK_ANSWERS_ON_AUTHOR
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1770373873452-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: parent_id
+            baseTableName: answers
+            constraintName: FK_ANSWERS_ON_PARENT
+            referencedColumnNames: id
+            referencedTableName: answers
+  - changeSet:
+      id: 1770373873452-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: question_id
+            baseTableName: answers
+            constraintName: FK_ANSWERS_ON_QUESTION
+            referencedColumnNames: id
+            referencedTableName: questions
+  - changeSet:
+      id: 1770373873452-6
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: author_id
+            baseTableName: questions
+            constraintName: FK_QUESTIONS_ON_AUTHOR
+            referencedColumnNames: id
+            referencedTableName: accounts
+

@@ -1,0 +1,10 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+**/.git
+**/.env*
+**docker-compose*.yml
+instructions.md
+**/.idea
+**/*.iml
+**/logs/
+**/.DS_Store

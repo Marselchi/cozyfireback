@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1773918944714-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  name: accepted
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_participations
+                  name: session_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_participations
+                  name: account_id
+                  type: BIGINT
+            tableName: participations
+

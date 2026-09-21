@@ -1,0 +1,78 @@
+databaseChangeLog:
+  - changeSet:
+      id: modify-varchars-to-text
+      author: Марсель
+      changes:
+        - modifyDataType:
+            tableName: lore
+            columnName: title
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: lore
+            columnName: description
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: lore
+            columnName: date
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: roles
+            columnName: name
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: tags
+            columnName: name
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: invitations
+            columnName: code
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: questions
+            columnName: title
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: refresh_tokens
+            columnName: token
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: profiles
+            columnName: email
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: profiles
+            columnName: username
+            newDataType: TEXT
+        - modifyDataType:
+            tableName: profiles
+            columnName: password
+            newDataType: TEXT
+
+  - changeSet:
+      id: fix-lore-view-cascade
+      author: Марсель
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: lore_view
+            constraintName: FK_LORE_VIEW_ON_LORE
+        - addForeignKeyConstraint:
+            baseTableName: lore_view
+            baseColumnNames: lore_id
+            constraintName: FK_LORE_VIEW_ON_LORE
+            referencedTableName: lore
+            referencedColumnNames: id
+            onDelete: CASCADE
+
+  - changeSet:
+      id: add-refresh-tokens-index
+      author: Марсель
+      changes:
+        - createIndex:
+            tableName: refresh_tokens
+            indexName: idx_refresh_tokens_expiry
+            unique: false
+            columns:
+              - column:
+                  name: expiry_date
+              - column:
+                  name: active

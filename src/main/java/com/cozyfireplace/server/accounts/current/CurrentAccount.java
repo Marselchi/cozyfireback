@@ -1,0 +1,8 @@
+package com.cozyfireplace.server.accounts.current;
+
+import java.lang.annotation.*;
+
+@Target(ElementType.PARAMETER)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface CurrentAccount {}

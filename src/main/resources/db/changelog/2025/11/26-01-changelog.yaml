@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1764165857172-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_refresh_tokens
+                  name: id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: token
+                  type: VARCHAR(255)
+              - column:
+                  constraints:
+                    nullable: false
+                  name: profile_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                  name: expiry_date
+                  type: DATETIME
+              - column:
+                  constraints:
+                    nullable: false
+                  name: active
+                  type: BOOLEAN
+            tableName: refresh_tokens
+  - changeSet:
+      id: 1764165857172-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addUniqueConstraint:
+            columnNames: token
+            constraintName: uc_refresh_tokens_token
+            tableName: refresh_tokens
+  - changeSet:
+      id: 1764165857172-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: profile_id
+            baseTableName: refresh_tokens
+            constraintName: FK_REFRESH_TOKENS_ON_PROFILE
+            referencedColumnNames: id
+            referencedTableName: profiles
+  - changeSet:
+      id: 1764165857172-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - modifyDataType:
+            columnName: username
+            newDataType: VARCHAR(20)
+            tableName: profiles
+

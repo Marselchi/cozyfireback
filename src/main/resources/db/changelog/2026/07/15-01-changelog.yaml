@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1777822239163-27
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            sql: CREATE INDEX idx_lore_content_fts ON lore USING GIN (to_tsvector('russian', content));

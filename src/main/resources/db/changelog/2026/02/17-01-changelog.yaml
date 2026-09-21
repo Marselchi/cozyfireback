@@ -1,0 +1,33 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1771328919474-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addColumn:
+            columns:
+              - column:
+                  name: lore_id
+                  type: BIGINT
+            tableName: questions
+  - changeSet:
+      id: 1771328919474-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: lore_id
+            baseTableName: questions
+            constraintName: FK_QUESTIONS_ON_LORE
+            referencedColumnNames: id
+            referencedTableName: lore
+  - changeSet:
+      id: 1771328919474-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropNotNullConstraint:
+            columnDataType: bigint
+            columnName: question_id
+            tableName: answers
+

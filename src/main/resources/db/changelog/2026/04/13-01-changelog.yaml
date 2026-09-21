@@ -1,0 +1,110 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1776085606397-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_character_roles
+                  name: character_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_character_roles
+                  name: role_id
+                  type: BIGINT
+            tableName: character_roles
+  - changeSet:
+      id: 1776085606397-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_characters
+                  name: id
+                  type: BIGINT
+              - column:
+                  name: name
+                  type: TEXT
+              - column:
+                  name: description
+                  type: TEXT
+              - column:
+                  name: status
+                  type: TEXT
+              - column:
+                  name: content
+                  type: TEXT
+              - column:
+                  name: account_id
+                  type: BIGINT
+            tableName: characters
+  - changeSet:
+      id: 1776085606397-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addColumn:
+            columns:
+              - column:
+                  name: character_id
+                  type: BIGINT
+            tableName: questions
+  - changeSet:
+      id: 1776085606397-4
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: characters
+            constraintName: FK_CHARACTERS_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1776085606397-5
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: character_id
+            baseTableName: questions
+            constraintName: FK_QUESTIONS_ON_CHARACTER
+            referencedColumnNames: id
+            referencedTableName: characters
+  - changeSet:
+      id: 1776085606397-6
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: character_id
+            baseTableName: character_roles
+            constraintName: fk_charol_on_character
+            referencedColumnNames: id
+            referencedTableName: characters
+  - changeSet:
+      id: 1776085606397-7
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: role_id
+            baseTableName: character_roles
+            constraintName: fk_charol_on_role
+            referencedColumnNames: id
+            referencedTableName: roles
+

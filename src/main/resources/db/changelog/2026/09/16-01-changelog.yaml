@@ -1,0 +1,124 @@
+databaseChangeLog:
+
+  # ---------------------------------------------------------------------------
+  # 1. Старый функциональный индекс больше не используется: поиск по lore.content
+  #    теперь идёт через сгенерированную колонку content_tsv, в которой маркеры
+  #    {restrictedBlock ...} заменены на служебный токен.
+  # ---------------------------------------------------------------------------
+  - changeSet:
+      id: 1777822239163-100
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_lore_content_fts;
+      rollback:
+        - sql:
+            sql: CREATE INDEX idx_lore_content_fts ON lore USING GIN (to_tsvector('russian', content));
+
+  # ---------------------------------------------------------------------------
+  # 2. lore.content_tsv
+  #
+  #    Маркер заменяется НЕ на пробел, а на служебный токен-разделитель.
+  #    phraseto_tsquery сопоставляет позиции лексем: если заменить маркер
+  #    пробелом, слово перед маркером и слово после него окажутся на соседних
+  #    позициях, и фразовый запрос из двух слов "склеится" через границу блока.
+  #    БД тогда отдаст совпадение, которое приложение никогда не подсветит
+  #    (подсветка идёт посегментно) -> фантомный результат.
+  #    Реальная лексема занимает позицию и разрывает эту смежность.
+  #
+  #    ВАЖНО: то же самое значение зашито в
+  #    LoreDocumentAssembler.BLOCK_PLACEHOLDER — менять только синхронно.
+  # ---------------------------------------------------------------------------
+  - changeSet:
+      id: 1777822239163-101
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE lore
+                  ADD COLUMN content_tsv tsvector
+                  GENERATED ALWAYS AS (
+                      to_tsvector(
+                          'russian',
+                          regexp_replace(
+                              COALESCE(content, ''),
+                              '\{restrictedBlock[^}]*\}',
+                              ' xrbxboundaryxrbx ',
+                              'g'
+                          )
+                      )
+                  ) STORED;
+      rollback:
+        - sql:
+            sql: ALTER TABLE lore DROP COLUMN content_tsv;
+
+  - changeSet:
+      id: 1777822239163-102
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            sql: CREATE INDEX idx_lore_content_tsv ON lore USING GIN (content_tsv);
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_lore_content_tsv;
+
+  # ---------------------------------------------------------------------------
+  # 3. block.content_tsv — содержимое скрытых блоков теперь ищется отдельно.
+  # ---------------------------------------------------------------------------
+  - changeSet:
+      id: 1777822239163-103
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            splitStatements: false
+            sql: |
+              ALTER TABLE block
+                  ADD COLUMN content_tsv tsvector
+                  GENERATED ALWAYS AS (
+                      to_tsvector('russian', COALESCE(content, ''))
+                  ) STORED;
+      rollback:
+        - sql:
+            sql: ALTER TABLE block DROP COLUMN content_tsv;
+
+  - changeSet:
+      id: 1777822239163-104
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            sql: CREATE INDEX idx_block_content_tsv ON block USING GIN (content_tsv);
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_block_content_tsv;
+
+  # ---------------------------------------------------------------------------
+  # 4. Индексы под join'ы и проверки видимости блоков.
+  # ---------------------------------------------------------------------------
+  - changeSet:
+      id: 1777822239163-105
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_block_lore_id ON block (lore_id);
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_block_roles_block_id ON block_roles (block_id);
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_chance_config_block_id ON chance_config (block_id);
+        - sql:
+            sql: CREATE INDEX IF NOT EXISTS idx_access_record_char_block ON access_record (account_char_id, block_id) WHERE status IN ('PASSED', 'GRANTED');
+      rollback:
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_block_lore_id;
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_block_roles_block_id;
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_chance_config_block_id;
+        - sql:
+            sql: DROP INDEX IF EXISTS idx_access_record_char_block;

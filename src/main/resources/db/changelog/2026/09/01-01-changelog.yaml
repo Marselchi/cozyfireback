@@ -1,0 +1,111 @@
+databaseChangeLog:
+
+  - changeSet:
+      id: 2026-09-01-rename-skill-to-skills
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: skill
+      changes:
+        - renameTable:
+            oldTableName: skill
+            newTableName: skills
+
+  - changeSet:
+      id: 2026-09-01-add-sort-order-to-skills
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: skills
+        - not:
+            - columnExists:
+                tableName: skills
+                columnName: sort_order
+      changes:
+        - addColumn:
+            tableName: skills
+            columns:
+              - column:
+                  name: sort_order
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 2026-09-01-add-sort-order-to-stats
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: stats
+        - not:
+            - columnExists:
+                tableName: stats
+                columnName: sort_order
+      changes:
+        - addColumn:
+            tableName: stats
+            columns:
+              - column:
+                  name: sort_order
+                  type: integer
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+
+  - changeSet:
+      id: 2026-09-01-fill-stats-sort-order
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: stats
+        - columnExists:
+            tableName: stats
+            columnName: sort_order
+      changes:
+        - sql:
+            splitStatements: true
+            sql: |
+              UPDATE stats SET sort_order = 0 WHERE "key" = 'str';
+              UPDATE stats SET sort_order = 1 WHERE "key" = 'dex';
+              UPDATE stats SET sort_order = 2 WHERE "key" = 'con';
+              UPDATE stats SET sort_order = 3 WHERE "key" = 'int';
+              UPDATE stats SET sort_order = 4 WHERE "key" = 'wis';
+              UPDATE stats SET sort_order = 5 WHERE "key" = 'cha';
+
+  - changeSet:
+      id: 2026-09-01-fill-skills-sort-order
+      author: Марсель
+      preConditions:
+        - onFail: MARK_RAN
+        - tableExists:
+            tableName: skills
+        - columnExists:
+            tableName: skills
+            columnName: sort_order
+      changes:
+        - sql:
+            splitStatements: true
+            sql: |
+              UPDATE skills SET sort_order = 0 WHERE "key" = 'acrobatics';
+              UPDATE skills SET sort_order = 1 WHERE "key" = 'animalHandling';
+              UPDATE skills SET sort_order = 2 WHERE "key" = 'arcana';
+              UPDATE skills SET sort_order = 3 WHERE "key" = 'athletics';
+              UPDATE skills SET sort_order = 4 WHERE "key" = 'deception';
+              UPDATE skills SET sort_order = 5 WHERE "key" = 'history';
+              UPDATE skills SET sort_order = 6 WHERE "key" = 'insight';
+              UPDATE skills SET sort_order = 7 WHERE "key" = 'intimidation';
+              UPDATE skills SET sort_order = 8 WHERE "key" = 'investigation';
+              UPDATE skills SET sort_order = 9 WHERE "key" = 'medicine';
+              UPDATE skills SET sort_order = 10 WHERE "key" = 'nature';
+              UPDATE skills SET sort_order = 11 WHERE "key" = 'perception';
+              UPDATE skills SET sort_order = 12 WHERE "key" = 'performance';
+              UPDATE skills SET sort_order = 13 WHERE "key" = 'persuasion';
+              UPDATE skills SET sort_order = 14 WHERE "key" = 'religion';
+              UPDATE skills SET sort_order = 15 WHERE "key" = 'sleightOfHand';
+              UPDATE skills SET sort_order = 16 WHERE "key" = 'stealth';
+              UPDATE skills SET sort_order = 17 WHERE "key" = 'survival';

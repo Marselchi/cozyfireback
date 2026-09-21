@@ -1,0 +1,11 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1764509113814-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - dropNotNullConstraint:
+            columnDataType: bigint
+            columnName: room_id
+            tableName: accounts
+

@@ -1,0 +1,51 @@
+databaseChangeLog:
+  - changeSet:
+      id: 1772274037506-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - createTable:
+            columns:
+              - column:
+                  constraints:
+                    nullable: false
+                  name: viewed
+                  type: BOOLEAN
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore_view
+                  name: lore_id
+                  type: BIGINT
+              - column:
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_lore_view
+                  name: account_id
+                  type: BIGINT
+            tableName: lore_view
+  - changeSet:
+      id: 1772274037506-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: account_id
+            baseTableName: lore_view
+            constraintName: FK_LORE_VIEW_ON_ACCOUNT
+            referencedColumnNames: id
+            referencedTableName: accounts
+  - changeSet:
+      id: 1772274037506-3
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: lore_id
+            baseTableName: lore_view
+            constraintName: FK_LORE_VIEW_ON_LORE
+            referencedColumnNames: id
+            referencedTableName: lore
+
