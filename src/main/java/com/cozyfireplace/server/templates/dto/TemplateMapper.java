@@ -10,6 +10,7 @@ public interface TemplateMapper {
 
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "author", ignore = true)
+    @Mapping(target = "content", ignore = true)
     void updateTemplateFromRequest(TemplateUpdateRequest request, @MappingTarget Template template);
 
     TemplateResponse toTemplateResponse(Template template);

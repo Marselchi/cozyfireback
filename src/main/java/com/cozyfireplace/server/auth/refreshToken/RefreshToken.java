@@ -30,5 +30,6 @@ public class RefreshToken {
 
     @Column(nullable = false)
     @Setter
+    @Builder.Default
     private boolean active = true;
 }

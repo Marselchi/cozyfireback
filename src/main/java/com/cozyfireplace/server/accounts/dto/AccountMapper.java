@@ -38,5 +38,10 @@ public interface AccountMapper {
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     @Mapping(target = "name", source = "request.name")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "roles", ignore = true)
+    @Mapping(target = "profile", ignore = true)
+    @Mapping(target = "room", ignore = true)
+    @Mapping(target = "accountChar", ignore = true)
     Account updateSelf(AccountUpdateSelfRequest request, @MappingTarget Account account);
 }

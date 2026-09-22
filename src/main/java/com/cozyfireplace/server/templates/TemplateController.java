@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -21,58 +22,68 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/templates")
 @RequiredArgsConstructor
-@Tag(name = "Templates", description = "Шаблоны")
+@Tag(name = "Templates", description = "Reusable lore/character templates")
 public class TemplateController {
 
     private final TemplateService templateService;
 
     @Operation(
-            summary = "Получить список шаблонов",
-            description = "Возвращает пагинированный список шаблонов с возможностью поиска по имени (без контента)",
+            summary = "List templates",
+            description = "Returns a paginated list of templates with optional name search (without content).",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Список шаблонов",
+                    @ApiResponse(responseCode = "200", description = "List of templates",
                             content = @Content(array = @ArraySchema(schema = @Schema(implementation = TemplateResponse.class))))
             }
     )
     @GetMapping
     public ResponseEntity<Page<TemplateResponse>> getAll(
-            @Parameter(description = "Поиск по имени")
+            @Parameter(description = "Search by name", example = "npc")
             @RequestParam(required = false) String search,
-            @PageableDefault(size = 20) Pageable pageable
+            @Parameter(hidden = true) @PageableDefault(size = 20) Pageable pageable
     ) {
         return ResponseEntity.ok(templateService.getAllTemplates(search, pageable));
     }
 
     @Operation(
-            summary = "Получить шаблон по ID",
-            description = "Возвращает полную информацию о шаблоне включая контент",
+            summary = "Get a template by ID",
+            description = "Returns the full template including its content.",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Ок",
+                    @ApiResponse(responseCode = "200", description = "OK",
                             content = @Content(schema = @Schema(implementation = TemplateDetailResponse.class))),
-                    @ApiResponse(responseCode = "404", description = "Шаблон не найден", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Template not found", content = @Content)
             }
     )
     @GetMapping("/{templateId}")
     public ResponseEntity<TemplateDetailResponse> getById(
-            @Parameter(description = "ID шаблона", required = true)
+            @Parameter(description = "ID of the template", required = true, example = "2")
             @PathVariable Long templateId
     ) {
         return ResponseEntity.ok(templateService.getTemplateById(templateId));
     }
 
     @Operation(
-            summary = "Создать шаблон",
-            description = "Создаёт новый шаблон",
+            summary = "Create a template",
+            description = "Creates a new template authored by the authenticated account.",
             responses = {
-                    @ApiResponse(responseCode = "204", description = "Создано"),
-                    @ApiResponse(responseCode = "404", description = "Автор не найден", content = @Content)
+                    @ApiResponse(responseCode = "204", description = "Created"),
+                    @ApiResponse(responseCode = "404", description = "Author not found", content = @Content)
             }
     )
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true,
+            content = @Content(examples = @ExampleObject(name = "TemplateCreate", value = """
+                    {
+                      "name": "NPC - Shopkeeper",
+                      "content": "Name:\\nAge:\\nPersonality:"
+                    }
+                    """))
+    )
     @PostMapping("/{roomId}")
+    @SuppressWarnings("unused")
     public ResponseEntity<Void> create(
-            @Parameter(description = "ID автора", required = true)
+            @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
-            @CurrentAccount Account account,
+            @Parameter(hidden = true) @CurrentAccount Account account,
             @Valid @RequestBody TemplateCreateRequest request
     ) {
         templateService.createTemplate(request, account.getId());
@@ -80,16 +91,22 @@ public class TemplateController {
     }
 
     @Operation(
-            summary = "Обновить название шаблона",
-            description = "Обновляет название шаблона",
+            summary = "Update a template name",
+            description = "Updates the name of a template.",
             responses = {
-                    @ApiResponse(responseCode = "204", description = "Обновлено"),
-                    @ApiResponse(responseCode = "404", description = "Шаблон не найден", content = @Content)
+                    @ApiResponse(responseCode = "204", description = "Updated"),
+                    @ApiResponse(responseCode = "404", description = "Template not found", content = @Content)
             }
+    )
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true,
+            content = @Content(examples = @ExampleObject(name = "TemplateUpdate", value = """
+                    { "name": "NPC - Friendly Shopkeeper" }
+                    """))
     )
     @PutMapping("/{templateId}")
     public ResponseEntity<Void> update(
-            @Parameter(description = "ID шаблона", required = true)
+            @Parameter(description = "ID of the template", required = true, example = "2")
             @PathVariable Long templateId,
             @Valid @RequestBody TemplateUpdateRequest request
     ) {
@@ -98,16 +115,16 @@ public class TemplateController {
     }
 
     @Operation(
-            summary = "Удалить шаблон",
-            description = "Удаляет шаблон по ID",
+            summary = "Delete a template",
+            description = "Deletes a template by its ID.",
             responses = {
-                    @ApiResponse(responseCode = "204", description = "Удалено"),
-                    @ApiResponse(responseCode = "404", description = "Шаблон не найден", content = @Content)
+                    @ApiResponse(responseCode = "204", description = "Deleted"),
+                    @ApiResponse(responseCode = "404", description = "Template not found", content = @Content)
             }
     )
     @DeleteMapping("/{templateId}")
     public ResponseEntity<Void> delete(
-            @Parameter(description = "ID шаблона", required = true)
+            @Parameter(description = "ID of the template", required = true, example = "2")
             @PathVariable Long templateId
     ) {
         templateService.deleteTemplate(templateId);

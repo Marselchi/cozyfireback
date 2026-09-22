@@ -1,10 +1,7 @@
 package com.cozyfireplace.server.questions.dto;
 
-import com.cozyfireplace.server.accounts.Account;
 import com.cozyfireplace.server.accounts.dto.AccountMapper;
-import com.cozyfireplace.server.accounts.dto.AccountQuestionDataResponse;
 import com.cozyfireplace.server.answers.dto.AnswerMapper;
-import com.cozyfireplace.server.answers.dto.AnswerResponse;
 import com.cozyfireplace.server.characters.Character;
 import com.cozyfireplace.server.lore.Lore;
 import com.cozyfireplace.server.lore.dto.IdName;
@@ -16,7 +13,6 @@ import org.mapstruct.MappingTarget;
 import org.mapstruct.Named;
 import org.mapstruct.NullValuePropertyMappingStrategy;
 
-import java.util.List;
 
 @Mapper(componentModel = "spring", uses = {AccountMapper.class, AnswerMapper.class})
 public interface QuestionMapper {
@@ -47,6 +43,14 @@ public interface QuestionMapper {
     @Mapping(target = "title", source = "request.title")
     @Mapping(target = "body", source = "request.body")
     @Mapping(target = "category", source = "request.category")
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "author", ignore = true)
+    @Mapping(target = "createdAt", ignore = true)
+    @Mapping(target = "updatedAt", ignore = true)
+    @Mapping(target = "isAnswered", ignore = true)
+    @Mapping(target = "lore", ignore = true)
+    @Mapping(target = "character", ignore = true)
+    @Mapping(target = "answers", ignore = true)
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
     void updateQuestionFromDto(QuestionUpdateRequest request, @MappingTarget Question question);
 

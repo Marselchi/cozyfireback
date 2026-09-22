@@ -18,5 +18,9 @@ public interface RoomMapper {
     void updateRoomDetailsFromRequest(RoomDetailsChangeRequest request, @MappingTarget RoomDetails details);
 
     @BeanMapping(nullValuePropertyMappingStrategy = NullValuePropertyMappingStrategy.IGNORE)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "creator", ignore = true)
+    @Mapping(target = "url", ignore = true)
+    @Mapping(target = "gameSystem", ignore = true)
     void updateRoomFromRequest(RoomUpdateRequest request, @MappingTarget Room room);
 }

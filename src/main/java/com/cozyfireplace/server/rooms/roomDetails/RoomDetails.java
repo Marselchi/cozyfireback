@@ -15,8 +15,10 @@ public class RoomDetails {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private long id;
 
+    @Builder.Default
     private String situation = "Мастер пока не установил";
 
+    @Builder.Default
     private String date = "Мастер пока не установил";
 
     @OneToOne

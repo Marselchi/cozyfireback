@@ -14,6 +14,10 @@ public interface AnswerMapper {
     @Mapping(target = "replyCount", source = "replyCount")
     AnswerResponse toAnswerResponse(Answer answer, long replyCount, boolean isAdmin);
 
+    @Mapping(target = "isAdmin", ignore = true)
+    @Mapping(target = "replyCount", ignore = true)
+    AnswerResponse toAnswerResponse(Answer answer);
+
     @Mapping(target = "isAdmin", source = "isAdmin")
     @Mapping(target = "updatedAt", source = "answer.updatedAt")
     @Mapping(target = "id", source = "answer.id")

@@ -10,6 +10,7 @@ import com.cozyfireplace.server.characters.dto.CharacterUserResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -24,22 +25,35 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/characters")
 @RequiredArgsConstructor
-@Tag(name = "Character", description = "API для управления персонажами")
+@Tag(name = "Characters", description = "Manage characters belonging to a room")
 public class CharacterController {
 
     private final CharacterService characterService;
 
     @Operation(
-            summary = "Создать персонажа",
-            description = "Создаёт персонажа в комнате. Роли передаются id-шниками в теле запроса.",
+            summary = "Create a character",
+            description = "Creates a character in the room. Roles are passed as a set of IDs in the request body.",
             responses = {
-                    @ApiResponse(responseCode = "201", description = "Создано"),
-                    @ApiResponse(responseCode = "404", description = "Комната/роль не найдены", content = @Content)
+                    @ApiResponse(responseCode = "201", description = "Created",
+                            content = @Content(examples = @ExampleObject(name = "characterId", value = "15"))),
+                    @ApiResponse(responseCode = "404", description = "Room/role not found", content = @Content)
             }
+    )
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true,
+            content = @Content(examples = @ExampleObject(name = "CharacterCreate", value = """
+                    {
+                      "name": "Kaera Dawnstrider",
+                      "description": "A wandering cartographer.",
+                      "status": "alive",
+                      "content": "Linked lore: [[The Broken Compass]]",
+                      "roleIds": [3, 8]
+                    }
+                    """))
     )
     @PostMapping("/{roomId}")
     public ResponseEntity<Long> create(
-            @Parameter(description = "ID комнаты", required = true) @PathVariable Long roomId,
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Valid @RequestBody CharacterRequest request,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
@@ -50,17 +64,27 @@ public class CharacterController {
     }
 
     @Operation(
-            summary = "Обновить персонажа",
-            description = "Обновляет персонажа. Поддерживается PATCH для частичного обновления.",
+            summary = "Update a character",
+            description = "Updates a character. Partial (PATCH) updates are supported.",
             responses = {
-                    @ApiResponse(responseCode = "204", description = "Обновлено"),
-                    @ApiResponse(responseCode = "404", description = "Персонаж/роль не найдены", content = @Content)
+                    @ApiResponse(responseCode = "204", description = "Updated"),
+                    @ApiResponse(responseCode = "404", description = "Character/role not found", content = @Content)
             }
+    )
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true,
+            content = @Content(examples = @ExampleObject(name = "CharacterUpdate", value = """
+                    {
+                      "name": "Kaera Dawnstrider",
+                      "status": "missing",
+                      "roleIds": [3]
+                    }
+                    """))
     )
     @PatchMapping("/{roomId}/{characterId}")
     public ResponseEntity<Void> update(
-            @Parameter(description = "ID комнаты", required = true) @PathVariable Long roomId,
-            @Parameter(description = "ID персонажа", required = true) @PathVariable Long characterId,
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId,
             @Valid @RequestBody CharacterRequest request,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
@@ -69,33 +93,33 @@ public class CharacterController {
     }
 
     @Operation(
-            summary = "Удалить персонажа",
-            description = "Удаляет персонажа.",
+            summary = "Delete a character",
+            description = "Deletes a character.",
             responses = {
-                    @ApiResponse(responseCode = "204", description = "Удалено"),
-                    @ApiResponse(responseCode = "404", description = "Персонаж не найден", content = @Content)
+                    @ApiResponse(responseCode = "204", description = "Deleted"),
+                    @ApiResponse(responseCode = "404", description = "Character not found", content = @Content)
             }
     )
     @DeleteMapping("/{characterId}")
     public ResponseEntity<Void> delete(
-            @Parameter(description = "ID персонажа", required = true) @PathVariable Long characterId
+            @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId
     ) {
         characterService.deleteCharacter(characterId);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
-            summary = "Список персонажей (пагинация + фильтры)",
-            description = "Возвращает страницу CharacterListResponse. Фильтры: name contains, roles ALL, createdByRoomCreator.",
+            summary = "List characters (pagination + filters)",
+            description = "Returns a page of CharacterListResponse. Filters: name contains, roles ALL, createdByRoomCreator.",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Ок"),
-                    @ApiResponse(responseCode = "404", description = "Комната не найдена", content = @Content)
+                    @ApiResponse(responseCode = "200", description = "OK"),
+                    @ApiResponse(responseCode = "404", description = "Room not found", content = @Content)
             }
     )
     @GetMapping("/{roomId}/all")
     public ResponseEntity<Page<CharacterListResponse>> list(
-            @Parameter(description = "ID комнаты", required = true) @PathVariable Long roomId,
-            @Parameter(description = "Фильтры списка") @ParameterObject CharacterListFilter filter,
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "List filters") @ParameterObject CharacterListFilter filter,
             @ParameterObject Pageable pageable,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
@@ -103,34 +127,34 @@ public class CharacterController {
     }
 
     @Operation(
-            summary = "Получить персонажа для редактирования",
-            description = "Возвращает CharacterResponse (включая roles).",
+            summary = "Get a character for editing",
+            description = "Returns a CharacterResponse (including roles).",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Ок"),
-                    @ApiResponse(responseCode = "404", description = "Персонаж не найден или нет доступа", content = @Content)
+                    @ApiResponse(responseCode = "200", description = "OK"),
+                    @ApiResponse(responseCode = "404", description = "Character not found or no access", content = @Content)
             }
     )
     @GetMapping("/{roomId}/{characterId}/edit")
     public ResponseEntity<CharacterResponse> getForEdit(
-            @Parameter(description = "ID комнаты", required = true) @PathVariable Long roomId,
-            @Parameter(description = "ID персонажа", required = true) @PathVariable Long characterId,
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
         return ResponseEntity.ok(characterService.getCharacterForEdit(roomId, characterId, account));
     }
 
     @Operation(
-            summary = "Получить персонажа для просмотра пользователем (inline)",
-            description = "Возвращает CharacterUserResponse с excerpts из lore, на которые есть ссылки в content персонажа.",
+            summary = "Get a character for user viewing (inline)",
+            description = "Returns a CharacterUserResponse with lore excerpts referenced from the character's content.",
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Ок"),
-                    @ApiResponse(responseCode = "404", description = "Персонаж не найден или нет доступа", content = @Content)
+                    @ApiResponse(responseCode = "200", description = "OK"),
+                    @ApiResponse(responseCode = "404", description = "Character not found or no access", content = @Content)
             }
     )
     @GetMapping("/{roomId}/{characterId}/viewInline")
     public ResponseEntity<CharacterUserResponse> getForUserInline(
-            @Parameter(description = "ID комнаты", required = true) @PathVariable Long roomId,
-            @Parameter(description = "ID персонажа", required = true) @PathVariable Long characterId,
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
         CharacterUserResponse response = characterService.getCharacterForUserInline(roomId, characterId, account);
