@@ -8,6 +8,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      rustfs:
+        condition: service_healthy
     networks:
       - app-net
     restart: unless-stopped
@@ -62,8 +64,35 @@ services:
       - app-net
     restart: unless-stopped
 
+  rustfs:
+    image: rustfs/rustfs:latest
+    container_name: rustfs
+    command: ["/data"]
+    environment:
+      # Single source of truth: the same .env credentials feed the RustFS
+      # container and the backend's S3 client.
+      - RUSTFS_ACCESS_KEY=${RUSTFS_ACCESS_KEY:-rustfsadmin}
+      - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
+      - RUSTFS_ADDRESS=:9000
+      - RUSTFS_CONSOLE_ADDRESS=:9001
+      - RUSTFS_CONSOLE_ENABLE=true
+      - RUSTFS_OBS_LOGGER_LEVEL=error
+    volumes:
+      - rustfsdata:/data
+    networks:
+      - app-net
+    restart: unless-stopped
+    healthcheck:
+      # Endpoints per RustFS docs; curl ships inside the official image.
+      test: ["CMD-SHELL", "curl --fail http://127.0.0.1:9000/health/ready && curl --fail http://127.0.0.1:9001/rustfs/console/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 volumes:
   pgdata:
+  rustfsdata:
 
 networks:
   app-net:

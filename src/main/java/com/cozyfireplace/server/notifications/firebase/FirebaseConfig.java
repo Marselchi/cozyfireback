@@ -20,6 +20,9 @@ public class FirebaseConfig {
 
     @PostConstruct
     public void init() {
+        if (serviceAccountPath == null || serviceAccountPath.isBlank()) {
+            return;
+        }
         try (InputStream serviceAccount = new FileInputStream(serviceAccountPath)) {
             FirebaseOptions options = FirebaseOptions.builder()
                     .setCredentials(GoogleCredentials.fromStream(serviceAccount))

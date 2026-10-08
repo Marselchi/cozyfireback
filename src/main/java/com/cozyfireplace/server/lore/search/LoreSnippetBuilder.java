@@ -101,9 +101,24 @@ public class LoreSnippetBuilder {
             boolean withinSize = (mergedEnd - current.start) <= maxChunkSize;
 
             if (overlaps && withinSize) {
+                // Пересекается и помещается в maxChunkSize — расширяем чанк.
                 current.end = mergedEnd;
                 current.occurrenceCount++;
+            } else if (overlaps) {
+                // Пересекается, но слияние превысило бы maxChunkSize.
+                if (window[1] <= current.end) {
+                    // Окно целиком внутри текущего чанка: текст уже выдан,
+                    // границы не трогаем, просто учитываем вхождение.
+                    current.occurrenceCount++;
+                } else {
+                    // Иначе закрываем текущий чанк и начинаем новый НЕ РАНЬШЕ
+                    // его конца, чтобы хвост предыдущего чанка не дублировался
+                    // в начале следующего.
+                    chunks.add(current);
+                    current = new Chunk(current.end, window[1], 1);
+                }
             } else {
+                // Не пересекается — закрываем текущий и начинаем новый.
                 chunks.add(current);
                 current = new Chunk(window[0], window[1], 1);
             }
@@ -156,8 +171,7 @@ public class LoreSnippetBuilder {
     /**
      * Если окно начинается внутри блока, открывающий заголовок в него не попал.
      * closeDanglingMarkup обрабатывает ":::" простым toggle и не умеет
-     * восстанавливать оборванный открывающий маркер блока (в отличие от
-     * инлайновых, для которых есть prependMarkers): чанк, в котором есть только
+     * восстанавливать оборванный открывающий маркер блока: чанк, в котором есть только
      * ЗАКРЫВАЮЩИЙ ":::", будет принят за открывающий, к нему допишется ещё
      * один — и фронт отрисует пустой спойлер, а текст вывалится наружу.
      * <p>

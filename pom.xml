@@ -5,29 +5,20 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.4</version>
+		<version>4.1.1</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.cozyfireplace</groupId>
 	<artifactId>server</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
-	<name/>
-	<description/>
-	<url/>
-	<licenses>
-		<license/>
-	</licenses>
-	<developers>
-		<developer/>
-	</developers>
-	<scm>
-		<connection/>
-		<developerConnection/>
-		<tag/>
-		<url/>
-	</scm>
+	<version>1.0.0</version>
+	<name>Cozy Fireplace Server</name>
+	<description>Backend for Cozy Fireplace application</description>
 	<properties>
-		<java.version>25</java.version>
+		<java.version>27</java.version>
+		<maven.compiler.release>27</maven.compiler.release>
+		<!-- Override Spring Boot-managed Lombok: 1.18.46 fails on JDK 27 (ExceptionInInitializerError);
+		     JDK 27 support was added in Lombok 1.18.48 (projectlombok/lombok#4072). -->
+		<lombok.version>1.18.48</lombok.version>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -56,13 +47,13 @@
 		<dependency>
 			<groupId>com.google.firebase</groupId>
 			<artifactId>firebase-admin</artifactId>
-			<version>9.8.0</version>
+			<version>9.11.0</version>
 			<scope>compile</scope>
 		</dependency>
 		<dependency>
 			<groupId>com.github.slugify</groupId>
 			<artifactId>slugify</artifactId>
-			<version>3.0.7</version>
+			<version>4.0.1</version>
 			<scope>compile</scope>
 		</dependency>
 		<dependency>
@@ -73,6 +64,7 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-liquibase</artifactId>
 		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
@@ -92,7 +84,7 @@
 		<dependency>
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-			<version>3.0.2</version>
+			<version>3.1.1</version>
 		</dependency>
 
 		<dependency>
@@ -161,23 +153,19 @@
 			<version>1.6.3</version>
 		</dependency>
 		<dependency>
-			<groupId>io.minio</groupId>
-			<artifactId>minio</artifactId>
-			<version>9.0.3</version>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.55.11</version>
 		</dependency>
 		<dependency>
-			<groupId>com.squareup.okhttp3</groupId>
-			<artifactId>okhttp</artifactId>
-			<version>4.12.0</version>
-		</dependency>
-		<dependency>
-			<groupId>com.twelvemonkeys.imageio</groupId>
-			<artifactId>imageio-webp</artifactId>
-			<version>3.15.1</version>
+			<groupId>com.github.usefulness</groupId>
+			<artifactId>webp-imageio</artifactId>
+			<version>0.11.0</version>
 		</dependency>
 	</dependencies>
 
 	<build>
+		<finalName>app</finalName>
 		<plugins>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>

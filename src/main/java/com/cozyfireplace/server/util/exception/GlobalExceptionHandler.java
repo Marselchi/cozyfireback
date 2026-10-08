@@ -1,5 +1,6 @@
 package com.cozyfireplace.server.util.exception;
 
+import com.cozyfireplace.server.images.QuotaExceededException;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -52,6 +53,12 @@ public class GlobalExceptionHandler {
         log.warn("Token invalid: {}", ex.getMessage());
         ApiError error = ApiError.of(HttpStatus.UNAUTHORIZED, ex.getMessage());
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
+    }
+
+    @ExceptionHandler(QuotaExceededException.class)
+    public ResponseEntity<Map<String, String>> handleQuotaExceeded(QuotaExceededException ex) {
+        log.warn("Image quota exceeded: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "quota_exceeded"));
     }
 
     @ExceptionHandler(Exception.class)

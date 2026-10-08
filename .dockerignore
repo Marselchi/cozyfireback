@@ -3,7 +3,7 @@ target/
 **/.git
 **/.env*
 **docker-compose*.yml
-instructions.md
+*.md
 **/.idea
 **/*.iml
 **/logs/
