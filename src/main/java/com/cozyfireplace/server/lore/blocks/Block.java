@@ -1,5 +1,6 @@
 package com.cozyfireplace.server.lore.blocks;
 
+import com.cozyfireplace.server.characters.Character;
 import com.cozyfireplace.server.lore.Lore;
 import com.cozyfireplace.server.roles.Role;
 import jakarta.persistence.*;
@@ -27,6 +28,10 @@ public class Block {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "lore_id")
     private Lore lore;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "character_id")
+    private Character character;
 
     @OneToOne(mappedBy = "block", cascade = CascadeType.ALL, orphanRemoval = true)
     private ChanceConfig chanceConfig;

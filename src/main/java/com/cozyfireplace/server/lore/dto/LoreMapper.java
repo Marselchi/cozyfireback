@@ -55,17 +55,20 @@ public interface LoreMapper {
     @Mapping(target = "createdByRoomCreator", source = "s.createdByRoomCreator")
     @Mapping(target = "tags", source = "tags")
     @Mapping(target = "nonPublic", source = "canSeeAll")
-    LoreUserResponse toUserResponse(LoreSummaryRow s, boolean isAuthor, boolean canSeeAll, List<IdName> tags);
+    @Mapping(target = "questionCount", source = "questionCount")
+    LoreUserResponse toUserResponse(LoreSummaryRow s, boolean isAuthor, boolean canSeeAll, List<IdName> tags, long questionCount);
 
     @Mapping(target = "content", source = "content")
     @Mapping(target = "isAuthor", source = "isAuthor")
     @Mapping(target = "nonPublic", source = "nonPublic")
     @Mapping(target = "tags", source = "tags")
+    @Mapping(target = "questionCount", source = "questionCount")
     LoreUserResponse toUserResponse(LoreSummaryRow s,
                                     String content,
                                     boolean isAuthor,
                                     boolean nonPublic,
-                                    List<IdName> tags);
+                                    List<IdName> tags,
+                                    long questionCount);
 
     @Mapping(target = "id", source = "s.id")
     @Mapping(target = "title", source = "s.title")

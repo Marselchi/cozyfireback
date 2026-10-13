@@ -1,527 +1,515 @@
 package com.cozyfireplace.server.lore;
 
+import com.cozyfireplace.server.BaseIntegrationTest;
 import com.cozyfireplace.server.accounts.Account;
-import com.cozyfireplace.server.accounts.AccountRepository;
 import com.cozyfireplace.server.auth.profile.Profile;
-import com.cozyfireplace.server.auth.profile.ProfileRepository;
-import com.cozyfireplace.server.lore.dto.*;
-import com.cozyfireplace.server.loreViews.LoreViewService;
-import com.cozyfireplace.server.notifications.firebase.FirebaseConfig;
-import com.cozyfireplace.server.rooms.Room;
-import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.lore.dto.LoreRequest;
+import com.cozyfireplace.server.questions.Question;
+import com.cozyfireplace.server.questions.QuestionRepository;
 import com.cozyfireplace.server.roles.Role;
-import com.cozyfireplace.server.roles.RoleRepository;
+import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.tags.Tag;
-import com.cozyfireplace.server.tags.TagRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MvcResult;
 
-import java.util.List;
+import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.*;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
-@AutoConfigureMockMvc
-@Transactional
-@DisplayName("LoreController integration tests (Profile-based auth)")
-class LoreIT {
+/**
+ * Integration tests for {@link LoreController} — {@code /api/v1/lore}.
+ *
+ * <p>Exercises the full MVC + Spring Security + JPA stack against the shared Testcontainers
+ * PostgreSQL. The central business rule under test is <b>role-based visibility</b>
+ * (see {@code LoreService#getLoreList} / {@code assertCanReadLore} and the native
+ * {@code LoreRepository#findLoreIdsFiltered} / {@code existsVisibleLore} queries): a lore entry
+ * tagged with one or more roles is a "restricted"/non-public entry, visible only to the room
+ * creator or to accounts holding at least one of those roles; an entry without roles is visible
+ * to every member of the room. Entries the viewer may not read answer with <b>404</b> (never 403)
+ * so the API does not leak their existence.</p>
+ *
+ * <p><b>Not covered on purpose:</b> the deprecated {@code viewInline} read view is intentionally
+ * excluded (project convention: deprecated endpoints get no IT coverage); the supported read
+ * surfaces are {@code /edit} and {@code /view}.</p>
+ *
+ * <p><b>Documented status map</b> (consistent across the whole IT suite):
+ * <ul>
+ *   <li>anonymous request → 403 (stateless chain, default {@code Http403ForbiddenEntryPoint});</li>
+ *   <li>authenticated user without an account in the room ({@code @CurrentAccount} throws
+ *       AccessDeniedException, unmapped by {@code GlobalExceptionHandler}) → 500 (pinned);</li>
+ *   <li>bean-validation violations → 400 with {@code $.validationErrors.<field>};</li>
+ *   <li>{@code NotFoundException} (missing lore / unknown role id) → 404;</li>
+ *   <li>a {@code @CurrentAccount}-based endpoint with an unknown {@code roomId} → 500, because the
+ *       argument resolver fails to find an account in the missing room before the handler runs;</li>
+ *   <li>{@code deleteLore} uses the lenient {@code repository.deleteById} → unknown id is 204.</li>
+ * </ul>
+ *
+ * <p>Role-restricted visibility is read through native queries, so fixtures that created the
+ * {@code lore_roles} join rows in an earlier request within the same test transaction flush
+ * explicitly before the GET (in production those are separate, committed transactions).</p>
+ */
+@DisplayName("LoreIT — /api/v1/lore")
+class LoreIT extends BaseIntegrationTest {
 
     @Autowired
-    private MockMvc mockMvc;
-    @Autowired
-    private LoreRepository loreRepository;
-    @Autowired
-    private RoomRepository roomRepository;
-    @MockitoBean
-    private FirebaseConfig firebaseConfig; // или какой там тип у твоего конфига
-    @Autowired
-    private AccountRepository accountRepository;
-    @Autowired
-    private ProfileRepository profileRepository;
-    @Autowired
-    private RoleRepository roleRepository;
-    @Autowired
-    private TagRepository tagRepository;
+    LoreRepository loreRepository;
 
-    @MockitoBean
-    private LoreViewService loreViewService;
+    @Autowired
+    QuestionRepository questionRepository;
 
-    private Profile testProfile;
-    private Profile creatorProfile;
-    private Room testRoom;
-    private Account testAccount;      // Profile → Account в комнате (обычный участник)
-    private Account creatorAccount;   // Profile → Account в комнате (создатель)
-    private Role testRole;
-    private Tag testTag;
+    @Autowired
+    EntityManager entityManager;
+
+    Profile creatorProfile;
+    Room room;
+    Account creatorAccount;
+    Profile memberProfile;
+    Account memberAccount;
 
     @BeforeEach
-    void setUp() {
-        // 1. Создаём профили
-        testProfile = new Profile();
-        testProfile.setEmail("player@test.com");
-        testProfile.setUsername("player");
-        testProfile.setPassword("password");
-        testProfile = profileRepository.save(testProfile);
-
-        creatorProfile = new Profile();
-        creatorProfile.setEmail("dm@test.com");
-        creatorProfile.setUsername("dmmmm");
-        creatorProfile.setPassword("password");
-        creatorProfile = profileRepository.save(creatorProfile);
-
-        // 2. Создаём комнату (пока без создателя)
-        testRoom = Room.builder()
-                .name("Test Room")
-                .url("/test-room")
-                .description(null)
-                .build();
-        // Не сохраняем комнату сразу!
-
-        // 3. Создаём аккаунт создателя, привязанный к комнате
-        creatorAccount = Account.builder()
-                .name("DM")
-                .profile(creatorProfile)
-                .room(testRoom)
-                .build();
-        creatorAccount = accountRepository.save(creatorAccount); // сначала сохраняем аккаунт
-
-        // 4. Теперь устанавливаем создателя комнаты и сохраняем комнату
-        testRoom.setCreator(creatorAccount);
-        testRoom = roomRepository.save(testRoom); // теперь комната сохранена с корректным creator
-
-        // 5. Создаём обычного участника (привязан к уже сохранённой комнате)
-        testAccount = new Account();
-        testAccount.setName("Player");
-        testAccount.setProfile(testProfile);
-        testAccount.setRoom(testRoom);
-        testAccount = accountRepository.save(testAccount);
-
-        // 6. Создаём роль и тег в комнате
-        testRole = new Role();
-        testRole.setName("Test Role");
-        testRole.setRoom(testRoom);
-        testRole = roleRepository.save(testRole);
-
-        testTag = new Tag();
-        testTag.setName("test-tag");
-        testTag.setRoom(testRoom);
-        testTag = tagRepository.save(testTag);
+    void seedRoom() {
+        creatorProfile = newProfile("dm");
+        room = newRoomOwnedBy(creatorProfile, "Lore Room");
+        creatorAccount = room.getCreator();
+        memberProfile = newProfile("player");
+        memberAccount = newAccount(memberProfile, room, "Player One");
     }
 
-    // ====== HELPERS: настройка аутентификации ======
-
-    /**
-     * Устанавливает в SecurityContext аутентификацию для заданного профиля.
-     * Резолвер @CurrentAccount найдёт аккаунт по (profileId, roomId) из запроса.
-     */
-    private void authenticateAs(Profile profile) {
-        var auth = new UsernamePasswordAuthenticationToken(
-                profile.getId(),          // principal = profileId
-                null,                     // credentials
-                List.of()                 // authorities (если нужны)
-        );
-        SecurityContextHolder.getContext().setAuthentication(auth);
+    /** POSTs a lore as the given profile and returns the created id (201 expected). */
+    private long createViaApi(Profile actor, String body) throws Exception {
+        authenticateAs(actor);
+        MvcResult result = mockMvc.perform(post("/api/v1/lore/{roomId}", room.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andReturn();
+        return Long.parseLong(result.getResponse().getContentAsString(StandardCharsets.UTF_8).trim());
     }
 
-    private void clearAuthentication() {
-        SecurityContextHolder.clearContext();
+    private String loreBody(String title, String content, Set<Long> roleIds, Set<Long> tagIds) {
+        return json(new LoreRequest(title, "A short description.", "Year of the Amber Moon",
+                content, null, roleIds, tagIds));
     }
 
-    // ====== CREATE LORE ======
+    /** Persists an unanswered question bound to the given lore, for questionCount assertions. */
+    private void saveUnansweredQuestion(Account author, Lore lore, String title) {
+        questionRepository.save(Question.builder()
+                .title(title)
+                .body("question body")
+                .author(author)
+                .lore(lore)
+                .isAnswered(false)
+                .build());
+    }
+
     @Nested
-    @DisplayName("POST /api/v1/lore/{roomId}")
-    class CreateLoreTests {
+    @DisplayName("POST /api/v1/lore/{roomId} — create")
+    class CreateTests {
 
-//        @Test
-//        @DisplayName("should create lore and return 201 with ID")
-//        void createLore_success() throws Exception {
-//            authenticateAs(creatorProfile); // Авторизуемся как создатель
-//
-//            LoreRequest request = new LoreRequest("New Lore", "Content", null, null, null, null);
-//
-//            try {
-//                mockMvc.perform(post("/api/v1/lore/{roomId}", testRoom.getId())
-//                                .contentType(MediaType.APPLICATION_JSON)
-//                                .content(objectMapper.writeValueAsString(request)))
-//                        .andExpect(status().isCreated())
-//                        .andExpect(content().string(not(emptyString())));
-//
-//                var lores = loreRepository.findAllByRoomId(testRoom.getId());
-//                assertThat(lores, hasSize(1));
-//                assertThat(lores.getFirst().getTitle(), equalTo("New Lore"));
-//            } finally {
-//                clearAuthentication();
-//            }
-//        }
-//
-//        @Test
-//        @DisplayName("should return 404 when room not found")
-//        void createLore_roomNotFound() throws Exception {
-//            authenticateAs(creatorProfile);
-//
-//            LoreRequest request = new LoreRequest("Lore", "Content", null, null, null, null);
-//
-//            try {
-//                mockMvc.perform(post("/api/v1/lore/{roomId}", 99999L)
-//                                .contentType(MediaType.APPLICATION_JSON)
-//                                .content(objectMapper.writeValueAsString(request)))
-//                        .andExpect(status().isNotFound());
-//            } finally {
-//                clearAuthentication();
-//            }
-//        }
-//
-//        @Test
-//        @DisplayName("should create lore with roles and tags")
-//        void createLore_withRolesAndTags() throws Exception {
-//            authenticateAs(creatorProfile);
-//
-//            LoreRequest request = new LoreRequest(
-//                    "Lore with meta",
-//                    "Description",
-//                    "date",
-//                    "Content",
-//                    Set.of(testRole.getId()),
-//                    Set.of(testTag.getId())
-//            );
-//
-//            try {
-//                mockMvc.perform(post("/api/v1/lore/{roomId}", testRoom.getId())
-//                                .contentType(MediaType.APPLICATION_JSON)
-//                                .content(objectMapper.writeValueAsString(request)))
-//                        .andExpect(status().isCreated());
-//
-//                var savedLore = loreRepository.findAllByRoomId(testRoom.getId()).get(0);
-//                assertThat(savedLore.getRoles(), hasItem(testRole));
-//                assertThat(savedLore.getTags(), hasItem(testTag));
-//            } finally {
-//                clearAuthentication();
-//            }
-//        }
-//
-//        @Test
-//        @DisplayName("should return 403 when non-creator tries to create")
-//        void createLore_forbidden() throws Exception {
-//            authenticateAs(testProfile); // Обычный пользователь, не создатель
-//
-//            LoreRequest request = new LoreRequest("Lore", "Content", null, null, null, null);
-//
-//            try {
-//                mockMvc.perform(post("/api/v1/lore/{roomId}", testRoom.getId())
-//                                .contentType(MediaType.APPLICATION_JSON)
-//                                .content(objectMapper.writeValueAsString(request)))
-//                        .andExpect(status().isForbidden()); // или 403, зависит от реализации
-//            } finally {
-//                clearAuthentication();
-//            }
-//        }
-//    }
+        @Test
+        @DisplayName("creates a lore bound to the acting account and returns its id (201)")
+        void create_success() throws Exception {
+            Role role = newRole(room, "Inner circle");
+            Tag tag = newTag(room, "history");
 
-        // ====== UPDATE LORE ======
-//    @Nested
-//    @DisplayName("PUT /api/v1/lore/{roomId}/{loreId}")
-//    class UpdateLoreTests {
-//
-//        @Test
-//        @DisplayName("should update lore and return 204")
-//        void updateLore_success() throws Exception {
-//            authenticateAs(creatorProfile);
-//
-//            // Создаём лор заранее
-//            Lore initialLore = new Lore();
-//            initialLore.setTitle("Old Title");
-//            initialLore.setContent("Old Content");
-//            initialLore.setAccount(creatorAccount);
-//            Long loreId = loreRepository.save(initialLore).getId();
-//
-//            LoreRequest updateRequest = new LoreRequest("New Title", "New Content", null, "content", null, null);
-//
-//            try {
-//                mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", testRoom.getId(), loreId)
-//                                .contentType(MediaType.APPLICATION_JSON)
-//                                .content(objectMapper.writeValueAsString(updateRequest)))
-//                        .andExpect(status().isNoContent());
-//
-//                var updated = loreRepository.findById(loreId).orElseThrow();
-//                assertThat(updated.getTitle(), equalTo("New Title"));
-//                assertThat(updated.getContent(), equalTo("New Content"));
-//            } finally {
-//                clearAuthentication();
-//            }
-//        }
-//
-//        @Test
-//        @DisplayName("should return 404 when lore not found")
-//        void updateLore_notFound() throws Exception {
-//            authenticateAs(creatorProfile);
-//
-//            LoreRequest request = new LoreRequest("Title", "Content", null, null, null, null);
-//
-//            try {
-//                mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", testRoom.getId(), 99999L)
-//                                .contentType(MediaType.APPLICATION_JSON)
-//                                .content(objectMapper.writeValueAsString(request)))
-//                        .andExpect(status().isNotFound());
-//            } finally {
-//                clearAuthentication();
-//            }
-//        }
-//    }
+            long id = createViaApi(creatorProfile,
+                    loreBody("The Broken Compass", "It once pointed true.", Set.of(role.getId()), Set.of(tag.getId())));
 
-        // ====== DELETE LORE ======
-        @Nested
-        @DisplayName("DELETE /api/v1/lore/{loreId}")
-        class DeleteLoreTests {
-
-            @Test
-            @DisplayName("should delete lore and return 204")
-            void deleteLore_success() throws Exception {
-                authenticateAs(creatorProfile);
-
-                Lore lore = new Lore();
-                lore.setTitle("To Delete");
-                lore.setAccount(creatorAccount);
-                Long loreId = loreRepository.save(lore).getId();
-
-                try {
-                    mockMvc.perform(delete("/api/v1/lore/{loreId}", loreId))
-                            .andExpect(status().isNoContent());
-
-                    assertThat(loreRepository.findById(loreId).isPresent(), equalTo(false));
-                } finally {
-                    clearAuthentication();
-                }
-            }
+            Lore saved = loreRepository.findById(id).orElseThrow();
+            assertThat(saved.getTitle()).isEqualTo("The Broken Compass");
+            assertThat(saved.getAccount().getId()).isEqualTo(creatorAccount.getId());
+            assertThat(saved.getRoles()).extracting(Role::getName).containsExactly("Inner circle");
+            assertThat(saved.getTags()).extracting(Tag::getName).containsExactly("history");
         }
 
-        // ====== GET LORE LIST ======
-        @Nested
-        @DisplayName("GET /api/v1/lore/{roomId}/all")
-        class GetLoreListTests {
+        @Test
+        @DisplayName("a room member (not only the creator) may create lore → 201")
+        void create_byMember_success() throws Exception {
+            long id = createViaApi(memberProfile, loreBody("Player Note", "Authored by a member.", Set.of(), Set.of()));
 
-            @Test
-            @DisplayName("should return page of lores for authenticated user")
-            void getLoreList_success() throws Exception {
-                authenticateAs(testProfile); // Обычный пользователь
+            Lore saved = loreRepository.findById(id).orElseThrow();
+            assertThat(saved.getAccount().getId()).isEqualTo(memberAccount.getId());
+        }
 
-                // Создаём лоры от имени создателя
-                for (int i = 0; i < 3; i++) {
-                    Lore lore = new Lore();
-                    lore.setTitle("Lore " + i);
-                    lore.setContent("Content " + i);
-                    lore.setAccount(creatorAccount);
-                    loreRepository.save(lore);
-                }
+        @Test
+        @DisplayName("unknown role id in roleIds → 404 (resolveRoles refuses missing roles)")
+        void create_unknownRole_returns404() throws Exception {
+            authenticateAs(creatorProfile);
 
-                try {
-                    mockMvc.perform(get("/api/v1/lore/{roomId}/all", testRoom.getId())
-                                    .param("page", "0")
-                                    .param("size", "10"))
-                            .andExpect(status().isOk())
-                            .andExpect(jsonPath("$.content", hasSize(3)))
-                            .andExpect(jsonPath("$.totalElements", equalTo(3)));
-                } finally {
-                    clearAuthentication();
-                }
-            }
+            mockMvc.perform(post("/api/v1/lore/{roomId}", room.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Ghost", "content", Set.of(9_999_999L), Set.of())))
+                    .andExpect(status().isNotFound());
+        }
 
-            @Test
-            @DisplayName("should filter by title")
-            void getLoreList_filterByTitle() throws Exception {
-                authenticateAs(testProfile);
+        @Test
+        @DisplayName("unknown room id → 500 (@CurrentAccount cannot resolve an account in a " +
+                "nonexistent room; the resolver throws before the handler's own 404 is reached)")
+        void create_unknownRoom_returns500_currentBehaviour() throws Exception {
+            authenticateAs(creatorProfile);
 
-                Lore lore1 = new Lore();
-                lore1.setTitle("Important Lore");
-                lore1.setAccount(creatorAccount);
-                Lore lore2 = new Lore();
-                lore2.setTitle("Other Lore");
-                lore2.setAccount(creatorAccount);
-                loreRepository.saveAll(List.of(lore1, lore2));
+            mockMvc.perform(post("/api/v1/lore/{roomId}", 9_999_999L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Anywhere", "content", Set.of(), Set.of())))
+                    // Pinned: resolver AccessDeniedException is unmapped → 500 (would become 404 if resolution were deferred).
+                    .andExpect(status().isInternalServerError());
+        }
 
-                try {
-                    mockMvc.perform(get("/api/v1/lore/{roomId}/all", testRoom.getId())
-                                    .param("title", "Important"))
-                            .andExpect(status().isOk())
-                            .andExpect(jsonPath("$.content", hasSize(1)))
-                            .andExpect(jsonPath("$.content[0].title", equalTo("Important Lore")));
-                } finally {
-                    clearAuthentication();
-                }
-            }
+        @Test
+        @DisplayName("blank title fails bean validation → 400 with validationErrors.title")
+        void create_blankTitle_returns400() throws Exception {
+            authenticateAs(creatorProfile);
 
+            mockMvc.perform(post("/api/v1/lore/{roomId}", room.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("", "content", Set.of(), Set.of())))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.validationErrors.title").exists());
+        }
 
-            // ====== GET LORE FOR EDIT ======
-            @Nested
-            @DisplayName("GET /api/v1/lore/{roomId}/{loreId}/edit")
-            class GetLoreForEditTests {
+        @Test
+        @DisplayName("authenticated stranger without an account in the room → 500 " +
+                "(AccessDeniedException from @CurrentAccount is not mapped by GlobalExceptionHandler)")
+        void create_nonMember_returns500_currentBehaviour() throws Exception {
+            authenticateAs(newProfile("stranger"));
 
-                @Test
-                @DisplayName("should return lore for edit with roles and tags")
-                void getLoreForEdit_success() throws Exception {
-                    authenticateAs(creatorProfile);
+            mockMvc.perform(post("/api/v1/lore/{roomId}", room.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Intruder", "content", Set.of(), Set.of())))
+                    // Pinned on purpose: becomes 403 once AccessDeniedException gets an @ExceptionHandler.
+                    .andExpect(status().isInternalServerError());
+        }
+    }
 
-                    Lore lore = new Lore();
-                    lore.setTitle("Edit Me");
-                    lore.setContent("Content");
-                    lore.setAccount(creatorAccount);
-                    lore.setRoles(Set.of(testRole));
-                    lore.setTags(Set.of(testTag));
-                    Long loreId = loreRepository.save(lore).getId();
+    /**
+     * Listing reads through the native {@code findLoreIdsFiltered} query, which joins the
+     * {@code lore_roles} rows written by the create requests above. The fixtures therefore flush
+     * explicitly before the GET so those rows are visible to the native query.
+     */
+    @Nested
+    @DisplayName("GET /api/v1/lore/{roomId}/all — list with visibility + filters")
+    class ListTests {
 
-                    try {
-                        mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", testRoom.getId(), loreId))
-                                .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.title", equalTo("Edit Me")))
-                                .andExpect(jsonPath("$.roles", hasSize(1)))
-                                .andExpect(jsonPath("$.roles[0].id", equalTo(testRole.getId().intValue())))
-                                .andExpect(jsonPath("$.tags", hasSize(1)));
-                    } finally {
-                        clearAuthentication();
-                    }
-                }
+        @Test
+        @DisplayName("room creator sees every lore including role-restricted ones")
+        void list_creatorSeesAll() throws Exception {
+            createViaApi(creatorProfile, loreBody("Public Entry", "content", Set.of(), Set.of()));
+            Role secret = newRole(room, "Secret role");
+            createViaApi(creatorProfile, loreBody("Secret Entry", "content", Set.of(secret.getId()), Set.of()));
 
-                @Test
-                @DisplayName("should return 404 when non-creator accesses non-public lore")
-                void getLoreForEdit_forbidden() throws Exception {
-                    authenticateAs(testProfile);
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", room.getId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(2))
+                    .andExpect(jsonPath("$.page.totalElements").value(2));
+        }
 
-                    Lore lore = new Lore();
-                    lore.setTitle("Hidden");
-                    lore.setRoles(Set.of(testRole));
-                    lore.setAccount(creatorAccount);
-                    Long loreId = loreRepository.save(lore).getId();
+        @Test
+        @DisplayName("member without roles sees only the lore that is not role-restricted")
+        void list_memberSeesOnlyUnrestricted() throws Exception {
+            createViaApi(creatorProfile, loreBody("Public Entry", "content", Set.of(), Set.of()));
+            Role secret = newRole(room, "Secret role");
+            createViaApi(creatorProfile, loreBody("Secret Entry", "content", Set.of(secret.getId()), Set.of()));
+            entityManager.flush();
 
-                    try {
-                        mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", testRoom.getId(), loreId))
-                                .andExpect(status().isNotFound());
-                    } finally {
-                        clearAuthentication();
-                    }
-                }
-            }
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", room.getId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].title").value("Public Entry"))
+                    .andExpect(jsonPath("$.content[0].description").value("A short description."))
+                    .andExpect(jsonPath("$.content[0].date").value("Year of the Amber Moon"))
+                    .andExpect(jsonPath("$.content[0].nonPublic").value(false))
+                    .andExpect(jsonPath("$.content[0].createdByRoomCreator").value(true))
+                    .andExpect(jsonPath("$.content[0].accountName").value("Creator"));
+        }
 
-            // ====== GET LORE FOR USER VIEW ======
-            @Nested
-            @DisplayName("GET /api/v1/lore/{roomId}/{loreId}/view")
-            class GetLoreForUserTests {
+        @Test
+        @DisplayName("member holding the lore's role sees the restricted entry too")
+        void list_memberWithRoleSeesRestricted() throws Exception {
+            Role secret = newRole(room, "Secret role");
+            createViaApi(creatorProfile, loreBody("Secret Entry", "content", Set.of(secret.getId()), Set.of()));
+            memberAccount.getRoles().add(secret);
+            accountRepository.save(memberAccount);
+            entityManager.flush();
 
-                @Test
-                @DisplayName("should return lore for user view")
-                void getLoreForUser_success() throws Exception {
-                    authenticateAs(testProfile);
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", room.getId()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content[?(@.title == 'Secret Entry')]").isNotEmpty());
+        }
 
-                    Lore lore = new Lore();
-                    lore.setTitle("View Me");
-                    lore.setContent("Public content");
-                    lore.setAccount(creatorAccount);
-                    Long loreId = loreRepository.save(lore).getId();
+        @Test
+        @DisplayName("title filter matches case-insensitively (substring)")
+        void list_filterByTitle() throws Exception {
+            createViaApi(creatorProfile, loreBody("Important History", "content", Set.of(), Set.of()));
+            createViaApi(creatorProfile, loreBody("Other Notes", "content", Set.of(), Set.of()));
 
-                    try {
-                        mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", testRoom.getId(), loreId))
-                                .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.title", equalTo("View Me")))
-                                .andExpect(jsonPath("$.content", equalTo("Public content")));
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", room.getId())
+                            .param("title", "important"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1))
+                    .andExpect(jsonPath("$.content[0].title").value("Important History"));
+        }
 
-                        verify(loreViewService).setViewed(eq(testAccount.getId()), eq(loreId));
-                    } finally {
-                        clearAuthentication();
-                    }
-                }
+        @Test
+        @DisplayName("pagination params are honoured (size=1 → single element per page)")
+        void list_pagination() throws Exception {
+            createViaApi(creatorProfile, loreBody("One", "content", Set.of(), Set.of()));
+            createViaApi(creatorProfile, loreBody("Two", "content", Set.of(), Set.of()));
 
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", room.getId())
+                            .param("page", "0").param("size", "1"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.content.length()").value(1));
+        }
 
-            }
+        @Test
+        @DisplayName("unknown room id → 500 (@CurrentAccount resolution precedes the handler)")
+        void list_unknownRoom_returns500_currentBehaviour() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", 9_999_999L))
+                    .andExpect(status().isInternalServerError());
+        }
+    }
 
-            // ====== GET LORE INLINE ======
-            @Nested
-            @DisplayName("GET /api/v1/lore/{roomId}/{loreId}/viewInline")
-            class GetLoreInlineTests {
+    @Nested
+    @DisplayName("GET /api/v1/lore/{roomId}/{loreId}/edit")
+    class EditTests {
 
-                @Test
-                @DisplayName("should return inline response with excerpts")
-                void getLoreForUserInline_success() throws Exception {
-                    authenticateAs(testProfile);
+        @Test
+        @DisplayName("creator gets full content plus role and tag list")
+        void edit_success() throws Exception {
+            Role role = newRole(room, "Inner circle");
+            Tag tag = newTag(room, "relic");
+            long id = createViaApi(creatorProfile,
+                    loreBody("The Broken Compass", "Raw content", Set.of(role.getId()), Set.of(tag.getId())));
 
-                    Lore lore = new Lore();
-                    lore.setTitle("Inline Lore");
-                    lore.setContent("# Header\n[lore:123#section]Link[/lore]\nContent");
-                    lore.setAccount(creatorAccount);
-                    Long loreId = loreRepository.save(lore).getId();
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.title").value("The Broken Compass"))
+                    .andExpect(jsonPath("$.description").value("A short description."))
+                    .andExpect(jsonPath("$.date").value("Year of the Amber Moon"))
+                    .andExpect(jsonPath("$.content").value("Raw content"))
+                    .andExpect(jsonPath("$.accountName").value("Creator"))
+                    .andExpect(jsonPath("$.createdByRoomCreator").value(true))
+                    .andExpect(jsonPath("$.roles[0].name").value("Inner circle"))
+                    .andExpect(jsonPath("$.tags[0].name").value("relic"));
+        }
 
-                    try {
-                        mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/viewInline", testRoom.getId(), loreId))
-                                .andExpect(status().isOk())
-                                .andExpect(jsonPath("$.title", equalTo("Inline Lore")))
-                                .andExpect(jsonPath("$.excerpts", notNullValue()));
+        @Test
+        @DisplayName("role-restricted lore is invisible to a role-less member → 404 (no existence leak)")
+        void edit_hiddenForMemberWithoutRole_returns404() throws Exception {
+            Role secret = newRole(room, "Secret role");
+            long id = createViaApi(creatorProfile, loreBody("Secret Entry", "content", Set.of(secret.getId()), Set.of()));
+            entityManager.flush();
 
-                        verify(loreViewService).setViewed(eq(testAccount.getId()), eq(loreId));
-                    } finally {
-                        clearAuthentication();
-                    }
-                }
-            }
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", room.getId(), id))
+                    .andExpect(status().isNotFound());
+        }
 
-//        // ====== EDGE CASES ======
-//        @Nested
-//        @DisplayName("Edge cases")
-//        class EdgeCasesTests {
-//
-//            @Test
-//            @DisplayName("should handle empty request body fields")
-//            void createLore_emptyFields() throws Exception {
-//                authenticateAs(creatorProfile);
-//
-//                LoreRequest request = new LoreRequest("Title", "", null, null, null, null);
-//
-//                try {
-//                    mockMvc.perform(post("/api/v1/lore/{roomId}", testRoom.getId())
-//                                    .contentType(MediaType.APPLICATION_JSON)
-//                                    .content(objectMapper.writeValueAsString(request)))
-//                            .andExpect(status().isCreated());
-//                } finally {
-//                    clearAuthentication();
-//                }
-//            }
-//
-//            @Test
-//            @DisplayName("should handle pagination parameters")
-//            void getLoreList_pagination() throws Exception {
-//                authenticateAs(testProfile);
-//
-//                for (int i = 0; i < 15; i++) {
-//                    Lore lore = new Lore();
-//                    lore.setTitle("Lore " + i);
-//                    lore.setAccount(creatorAccount);
-//                    loreRepository.save(lore);
-//                }
-//
-//                try {
-//                    mockMvc.perform(get("/api/v1/lore/{roomId}/all", testRoom.getId())
-//                                    .param("page", "1")
-//                                    .param("size", "10"))
-//                            .andExpect(status().isOk())
-//                            .andExpect(jsonPath("$.content", hasSize(5)))
-//                            .andExpect(jsonPath("$.number", equalTo(1)))
-//                            .andExpect(jsonPath("$.size", equalTo(10)));
-//                } finally {
-//                    clearAuthentication();
-//                }
-//            }
+        @Test
+        @DisplayName("unknown lore id → 404")
+        void edit_unknownLore_returns404() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", room.getId(), 9_999_999L))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/lore/{roomId}/{loreId}/view")
+    class ViewTests {
+
+        @Test
+        @DisplayName("member gets a role-less entry; every mapped field is asserted so a summary-query regression is caught")
+        void view_success() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("View Me", "Public content", Set.of(), Set.of()));
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.title").value("View Me"))
+                    .andExpect(jsonPath("$.description").value("A short description."))
+                    .andExpect(jsonPath("$.date").value("Year of the Amber Moon"))
+                    .andExpect(jsonPath("$.content").value("Public content"))
+                    .andExpect(jsonPath("$.isAuthor").value(false))
+                    .andExpect(jsonPath("$.accountName").value("Creator"))
+                    .andExpect(jsonPath("$.nonPublic").value(false))
+                    .andExpect(jsonPath("$.createdByRoomCreator").value(true))
+                    .andExpect(jsonPath("$.tags").isEmpty())
+                    // Creator's view is recorded at creation; the count reflects views BEFORE this request, so 1.
+                    .andExpect(jsonPath("$.viewCount").value(1))
+                    .andExpect(jsonPath("$.questionCount").value(0));
+        }
+
+        @Test
+        @DisplayName("viewCount tracks distinct viewers via the lore_view subquery")
+        void view_viewCountTracksDistinctViewers() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Seen", "content", Set.of(), Set.of()));
+            entityManager.flush();
+
+            // First member view: only the creator has a lore_view row (recorded on create) → 1.
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.viewCount").value(1));
+
+            // Creator view: creator + member rows now exist → 2 (proves the count reads real lore_view rows,
+            // not a constant or a broken subquery).
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.viewCount").value(2));
+        }
+
+        @Test
+        @DisplayName("role-restricted entry seen by a role-holding member reports nonPublic=true; questionCount reflects unanswered questions")
+        void view_nonPublicAndQuestionCount() throws Exception {
+            Role secret = newRole(room, "Inner circle");
+            Tag tag = newTag(room, "relic");
+            long id = createViaApi(creatorProfile,
+                    loreBody("Secret Entry", "content", Set.of(secret.getId()), Set.of(tag.getId())));
+            saveUnansweredQuestion(creatorAccount, loreRepository.findById(id).orElseThrow(), "Unanswered?");
+            // A role-holding (non-creator) viewer sees the entry, so nonPublic surfaces as true for them;
+            // the creator short-circuits it to false via canSeeAll.
+            memberAccount.getRoles().add(secret);
+            accountRepository.save(memberAccount);
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.nonPublic").value(true))
+                    .andExpect(jsonPath("$.isAuthor").value(false))
+                    .andExpect(jsonPath("$.tags[0].name").value("relic"))
+                    .andExpect(jsonPath("$.questionCount").value(1));
+        }
+
+        @Test
+        @DisplayName("author viewing their own entry gets isAuthor=true")
+        void view_authorSeesIsAuthorTrue() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Mine", "content", Set.of(), Set.of()));
+            entityManager.flush();
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.isAuthor").value(true));
+        }
+
+        @Test
+        @DisplayName("role-restricted entry is invisible to a role-less member → 404")
+        void view_hiddenForMember_returns404() throws Exception {
+            Role secret = newRole(room, "Secret role");
+            long id = createViaApi(creatorProfile, loreBody("Secret Entry", "content", Set.of(secret.getId()), Set.of()));
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/view", room.getId(), id))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("PUT /api/v1/lore/{roomId}/{loreId} — update")
+    class UpdateTests {
+
+        @Test
+        @DisplayName("updates title/content and re-places roles → 204")
+        void update_success() throws Exception {
+            Role oldRole = newRole(room, "Old role");
+            Role newRole = newRole(room, "New role");
+            long id = createViaApi(creatorProfile, loreBody("Draft", "First", Set.of(oldRole.getId()), Set.of()));
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", room.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Final", "Second", Set.of(newRole.getId()), Set.of())))
+                    .andExpect(status().isNoContent());
+
+            Lore saved = loreRepository.findById(id).orElseThrow();
+            assertThat(saved.getTitle()).isEqualTo("Final");
+            assertThat(saved.getContent()).isEqualTo("Second");
+            assertThat(saved.getRoles()).extracting(Role::getName).containsExactly("New role");
+        }
+
+        @Test
+        @DisplayName("unknown lore id → 404")
+        void update_unknownLore_returns404() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", room.getId(), 9_999_999L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Ghost", "content", Set.of(), Set.of())))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("blank content fails bean validation → 400 with validationErrors.content")
+        void update_blankContent_returns400() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Draft", "First", Set.of(), Set.of()));
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", room.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Final", "", Set.of(), Set.of())))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.validationErrors.content").exists());
+        }
+    }
+
+    @Nested
+    @DisplayName("DELETE /api/v1/lore/{loreId}")
+    class DeleteTests {
+
+        @Test
+        @DisplayName("deletes the lore and answers 204")
+        void delete_success() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Doomed", "content", Set.of(), Set.of()));
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(delete("/api/v1/lore/{loreId}", id))
+                    .andExpect(status().isNoContent());
+
+            assertThat(loreRepository.findById(id)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("unknown lore id → 204 (deleteById is lenient, no existence check in service)")
+        void delete_unknownId_isSilentlyIgnored() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(delete("/api/v1/lore/{loreId}", 9_999_999L))
+                    // Pinned current behaviour: LoreService#deleteLore never verifies existence.
+                    .andExpect(status().isNoContent());
+        }
+    }
+
+    @Nested
+    @DisplayName("Security")
+    class SecurityTests {
+
+        @Test
+        @DisplayName("anonymous list request → 403 (default forbidden entry point)")
+        void anonymous_returns403() throws Exception {
+            clearAuthentication();
+            mockMvc.perform(get("/api/v1/lore/{roomId}/all", room.getId()))
+                    .andExpect(status().isForbidden());
         }
     }
 }

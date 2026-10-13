@@ -1,5 +1,5 @@
 package com.cozyfireplace.server.notifications.firebase.dto;
 
-public record RegisterFcmTokenRequest(
-        String token
+public record RegisterFcmFidRequest(
+        String fid
 ) {}

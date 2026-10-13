@@ -1,0 +1,33 @@
+databaseChangeLog:
+
+  - changeSet:
+      id: 1791000000000-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addColumn:
+            tableName: block
+            columns:
+              - column:
+                  name: character_id
+                  type: BIGINT
+      rollback:
+        - dropColumn:
+            tableName: block
+            columnName: character_id
+
+  - changeSet:
+      id: 1791000000000-2
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - addForeignKeyConstraint:
+            baseColumnNames: character_id
+            baseTableName: block
+            constraintName: FK_BLOCK_ON_CHARACTER
+            referencedColumnNames: id
+            referencedTableName: characters
+      rollback:
+        - dropForeignKeyConstraint:
+            baseTableName: block
+            constraintName: FK_BLOCK_ON_CHARACTER

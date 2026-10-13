@@ -13,5 +13,6 @@ public record LoreUserResponse(
         boolean nonPublic,
         boolean createdByRoomCreator,
         List<IdName> tags,
-        Long viewCount
+        Long viewCount,
+        long questionCount
 ) {}

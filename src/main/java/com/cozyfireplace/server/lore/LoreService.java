@@ -261,12 +261,15 @@ public class LoreService {
         // Разворачиваем блоки через BlockService
         String expandedContent = blockService.expandBlocks(s.getContent(), account);
 
+        long questionCount = questionRepository.countUnansweredByLoreId(s.getId());
+
         return loreMapper.toUserResponse(
                 s,
                 expandedContent,
                 isAuthor,
                 !canSeeAll && s.isNonPublic(),
-                tagsByLoreId.getOrDefault(s.getId(), List.of())
+                tagsByLoreId.getOrDefault(s.getId(), List.of()),
+                questionCount
         );
     }
 

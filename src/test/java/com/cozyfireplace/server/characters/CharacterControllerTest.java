@@ -136,18 +136,18 @@ class CharacterControllerTest {
     }
 
     @Nested
-    @DisplayName("GET /{roomId}/{characterId}/viewInline")
-    class GetForUserInline {
+    @DisplayName("GET /{roomId}/{characterId}/view")
+    class GetForUser {
 
         @Test
-        @DisplayName("returns 200 with the inline user view")
+        @DisplayName("returns 200 with the user view (no excerpts)")
         void returnsBody() {
             Account account = org.mockito.Mockito.mock(Account.class);
             CharacterUserResponse body = org.mockito.Mockito.mock(CharacterUserResponse.class);
-            when(characterService.getCharacterForUserInline(ROOM_ID, CHARACTER_ID, account)).thenReturn(body);
+            when(characterService.getCharacterForUser(ROOM_ID, CHARACTER_ID, account)).thenReturn(body);
 
             ResponseEntity<CharacterUserResponse> response =
-                    controller.getForUserInline(ROOM_ID, CHARACTER_ID, account);
+                    controller.getForUser(ROOM_ID, CHARACTER_ID, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).isSameAs(body);

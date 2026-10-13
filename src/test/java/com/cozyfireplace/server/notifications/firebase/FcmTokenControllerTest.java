@@ -1,6 +1,6 @@
 package com.cozyfireplace.server.notifications.firebase;
 
-import com.cozyfireplace.server.notifications.firebase.dto.RegisterFcmTokenRequest;
+import com.cozyfireplace.server.notifications.firebase.dto.RegisterFcmFidRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,7 +20,7 @@ import static org.mockito.Mockito.verify;
 @DisplayName("FcmTokenController")
 class FcmTokenControllerTest {
 
-    private static final String TOKEN = "device-token";
+    private static final String FID = "firebase-installation-id";
 
     @Mock
     private FcmTokenService tokenService;
@@ -29,20 +29,20 @@ class FcmTokenControllerTest {
     private FcmTokenController controller;
 
     @Test
-    @DisplayName("POST push-token registers the unwrapped token value")
-    void registerToken() {
-        RegisterFcmTokenRequest request = new RegisterFcmTokenRequest(TOKEN);
+    @DisplayName("POST push-token registers the unwrapped fid value")
+    void registerFid() {
+        RegisterFcmFidRequest request = new RegisterFcmFidRequest(FID);
 
-        controller.registerToken(request);
+        controller.registerFid(request);
 
-        verify(tokenService).registerToken(TOKEN);
+        verify(tokenService).registerFid(FID);
     }
 
     @Test
-    @DisplayName("DELETE push-token deactivates the requested token")
-    void deleteToken() {
-        controller.deleteToken(TOKEN);
+    @DisplayName("DELETE push-token deactivates the requested fid")
+    void deleteFid() {
+        controller.deleteFid(FID);
 
-        verify(tokenService).deactivateToken(TOKEN);
+        verify(tokenService).deactivateFid(FID);
     }
 }

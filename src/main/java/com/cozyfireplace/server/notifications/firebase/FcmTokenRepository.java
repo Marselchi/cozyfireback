@@ -9,8 +9,8 @@ import java.util.Optional;
 
 public interface FcmTokenRepository extends JpaRepository<FcmToken, Long> {
 
-    @Query("SELECT t.token FROM FcmToken t WHERE t.profile.id = :profileId AND t.active = true")
-    List<String> findTokensByProfileIdAndActiveTrue(@Param("profileId") Long profileId);
+    @Query("SELECT t.fid FROM FcmToken t WHERE t.profile.id = :profileId AND t.active = true")
+    List<String> findFidsByProfileIdAndActiveTrue(@Param("profileId") Long profileId);
 
-    Optional<FcmToken> findByToken(String token);
+    Optional<FcmToken> findByFid(String fid);
 }

@@ -6,6 +6,7 @@ import com.cozyfireplace.server.accounts.AccountRepository;
 import com.cozyfireplace.server.accounts.stats.AccountCharSkill;
 import com.cozyfireplace.server.accounts.stats.Skill;
 import com.cozyfireplace.server.accounts.stats.SkillRepository;
+import com.cozyfireplace.server.characters.Character;
 import com.cozyfireplace.server.lore.Lore;
 import com.cozyfireplace.server.lore.blocks.dto.*;
 import com.cozyfireplace.server.roles.Role;
@@ -51,8 +52,18 @@ public class BlockService {
      */
     @Transactional
     public String processBlockChanges(BlockChangesRequest request, Lore lore) {
-        String content = lore.getContent();
+        return processBlockChanges(lore.getContent(), request, addedBlock -> createBlock(addedBlock, lore));
+    }
 
+    /**
+     * Аналогично {@link #processBlockChanges(BlockChangesRequest, Lore)}, но владельцем блоков является персонаж.
+     */
+    @Transactional
+    public String processBlockChanges(BlockChangesRequest request, Character character) {
+        return processBlockChanges(character.getContent(), request, addedBlock -> createBlock(addedBlock, character));
+    }
+
+    private String processBlockChanges(String content, BlockChangesRequest request, Function<AddedBlockRequest, Long> blockCreator) {
         // Удаляем блоки
         if (request.getDeletedBlockIds() != null && !request.getDeletedBlockIds().isEmpty()) {
             List<Long> idsToDelete = request.getDeletedBlockIds().stream()
@@ -72,7 +83,7 @@ public class BlockService {
         Map<String, Long> localIdToRealId = new HashMap<>();
         if (request.getAddedBlocks() != null) {
             for (AddedBlockRequest addedBlock : request.getAddedBlocks()) {
-                Long realId = createBlock(addedBlock, lore);
+                Long realId = blockCreator.apply(addedBlock);
                 localIdToRealId.put(addedBlock.getLocalId(), realId);
             }
         }
@@ -263,9 +274,16 @@ public class BlockService {
     }
 
     private Long createBlock(AddedBlockRequest addedBlock, Lore lore) {
-        Block block = Block.builder()
+        return createBlock(addedBlock, Block.builder().lore(lore));
+    }
+
+    private Long createBlock(AddedBlockRequest addedBlock, Character character) {
+        return createBlock(addedBlock, Block.builder().character(character));
+    }
+
+    private Long createBlock(AddedBlockRequest addedBlock, Block.BlockBuilder builder) {
+        Block block = builder
                 .content(addedBlock.getContent())
-                .lore(lore)
                 .build();
 
         Map<String, Object> metadata = addedBlock.getMetadata();

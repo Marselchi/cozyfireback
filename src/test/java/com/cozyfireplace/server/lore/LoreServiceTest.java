@@ -581,7 +581,7 @@ class LoreServiceTest {
             when(loreRepository.findTagsByLoreIds(List.of(LORE_ID))).thenReturn(List.of());
             when(blockService.expandBlocks("raw", account)).thenReturn("expanded");
             LoreUserResponse response = mock(LoreUserResponse.class);
-            when(loreMapper.toUserResponse(summary, "expanded", true, false, List.of()))
+            when(loreMapper.toUserResponse(summary, "expanded", true, false, List.of(), 0L))
                     .thenReturn(response);
 
             LoreUserResponse result = loreService.getLoreForUser(ROOM_ID, LORE_ID, account);
@@ -606,8 +606,9 @@ class LoreServiceTest {
             when(loreRepository.findTagsByLoreIds(List.of(LORE_ID)))
                     .thenReturn(List.of(tagRow("location")));
             when(blockService.expandBlocks("raw", account)).thenReturn("clean");
+            when(questionRepository.countUnansweredByLoreId(LORE_ID)).thenReturn(3L);
             LoreUserResponse response = mock(LoreUserResponse.class);
-            when(loreMapper.toUserResponse(summary, "clean", false, true, List.of(new IdName(5L, "location"))))
+            when(loreMapper.toUserResponse(summary, "clean", false, true, List.of(new IdName(5L, "location")), 3L))
                     .thenReturn(response);
 
             LoreUserResponse result = loreService.getLoreForUser(ROOM_ID, LORE_ID, account);

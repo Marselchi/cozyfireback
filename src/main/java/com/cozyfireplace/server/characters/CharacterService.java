@@ -2,14 +2,9 @@ package com.cozyfireplace.server.characters;
 
 import com.cozyfireplace.server.accounts.Account;
 import com.cozyfireplace.server.characters.dto.*;
-import com.cozyfireplace.server.lore.LoreAnchorExtractor;
-import com.cozyfireplace.server.lore.LoreContentParser;
-import com.cozyfireplace.server.lore.LoreRepository;
-import com.cozyfireplace.server.lore.dto.ContentTitleRow;
-import com.cozyfireplace.server.lore.dto.ExcerptResponse;
+import com.cozyfireplace.server.lore.blocks.BlockService;
 import com.cozyfireplace.server.lore.dto.IdName;
 import com.cozyfireplace.server.notifications.event.CharacterEvent;
-import com.cozyfireplace.server.notifications.event.LoreEvent;
 import com.cozyfireplace.server.notifications.event.OperationType;
 import com.cozyfireplace.server.questions.QuestionRepository;
 import com.cozyfireplace.server.roles.Role;
@@ -42,10 +37,9 @@ public class CharacterService {
     private final RoleService roleService;
     private final RoomSecurityService roomSecurityService;
     private final CharacterMapper characterMapper;
-    private final LoreAnchorExtractor loreAnchorExtractor;
-    private final LoreRepository loreRepository;
     private final QuestionRepository questionRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final BlockService blockService;
 
     @Transactional
     public Long createCharacter(Long roomId, Account account, CharacterRequest request) {
@@ -59,6 +53,13 @@ public class CharacterService {
                 request.roleIds() == null ? List.of() : List.copyOf(request.roleIds())
         ));
         Character saved = characterRepository.save(character);
+
+        if (request.blockChanges() != null) {
+            String updatedContent = blockService.processBlockChanges(request.blockChanges(), saved);
+            saved.setContent(updatedContent);
+            saved = characterRepository.save(saved);
+        }
+
         eventPublisher.publishEvent(
                 CharacterEvent.builder()
                         .type(OperationType.CREATE)
@@ -86,6 +87,12 @@ public class CharacterService {
 
         character = roleService.updateRolesCharacter(character, request.roleIds());
         characterMapper.updateEntity(request, character);
+
+        if (request.blockChanges() != null) {
+            String updatedContent = blockService.processBlockChanges(request.blockChanges(), character);
+            character.setContent(updatedContent);
+        }
+
         characterRepository.save(character);
 
         eventPublisher.publishEvent(
@@ -179,15 +186,18 @@ public class CharacterService {
                         Collectors.mapping(r -> new IdName(r.getRoleId(), r.getRoleName()), Collectors.toList())
                 ));
 
+        String expandedContent = blockService.expandBlocks(s.getContent(), account);
+
         return characterMapper.toEditResponse(
                 s,
+                expandedContent,
                 rolesByCharacterId.getOrDefault(s.getId(), List.of())
         );
     }
 
-    // ====== ONE: user view inline ======
+    // ====== ONE: user view ======
     @Transactional(readOnly = true)
-    public CharacterUserResponse getCharacterForUserInline(Long roomId, Long characterId, Account account) {
+    public CharacterUserResponse getCharacterForUser(Long roomId, Long characterId, Account account) {
         boolean canSeeAll = roomSecurityService.isCreator(account);
 
         Set<Long> roleIds = getAccountRoleIds(account);
@@ -207,96 +217,18 @@ public class CharacterService {
                         Collectors.mapping(r -> new IdName(r.getRoleId(), r.getRoleName()), Collectors.toList())
                 ));
 
-        String parsedContent = LoreContentParser.parseRestrictedContent(s.getContent(), canSeeAll, roleIds);
+        // Разворачиваем блоки через BlockService (фильтрует restrictedBlock'и по правам viewer'а)
+        String expandedContent = blockService.expandBlocks(s.getContent(), account);
 
-        List<LoreAnchorExtractor.AnchorLink> anchorLinks = loreAnchorExtractor.extractAnchorLinks(parsedContent);
-
-        Map<Long, ContentTitleRow> loreById = getLoreContent(
-                roomId,
-                anchorLinks.stream().map(LoreAnchorExtractor.AnchorLink::loreId).toList(),
-                canSeeAll,
-                roleIds
-        );
-
-        anchorLinks.removeIf(link -> !loreById.containsKey(link.loreId()));
-        Set<String> anchorsToCheck = anchorLinks.stream()
-                .map(l -> l.loreId() + ":" + l.header())
-                .collect(Collectors.toSet());
-
-        String clearedContent = loreAnchorExtractor.removeInvalidLinks(parsedContent, anchorsToCheck);
-
-        List<ExcerptResponse> excerpts = extractExcerpts(anchorLinks, loreById, canSeeAll, roleIds);
-        long questionCount = questionRepository.countUnansweredByCharacterId(characterId);
+        long questionCount = questionRepository.countUnansweredByCharacterId(s.getId());
 
         return characterMapper.toUserResponse(
                 s,
-                clearedContent,
+                expandedContent,
                 isAuthor,
                 rolesByCharacterId.getOrDefault(s.getId(), List.of()),
-                excerpts,
                 questionCount
         );
-    }
-
-    private List<ExcerptResponse> extractExcerpts(List<LoreAnchorExtractor.AnchorLink> anchorLinks,
-                                                  Map<Long, ContentTitleRow> loreById,
-                                                  boolean canSeeAll,
-                                                  Set<Long> viewerRoleIds) {
-        if (anchorLinks == null || anchorLinks.isEmpty()) return List.of();
-
-        Map<Long, List<LoreAnchorExtractor.AnchorLink>> linksByLoreId = anchorLinks.stream()
-                .collect(Collectors.groupingBy(LoreAnchorExtractor.AnchorLink::loreId));
-
-        List<ExcerptResponse> excerpts = new ArrayList<>();
-
-        for (var entry : linksByLoreId.entrySet()) {
-            Long loreId = entry.getKey();
-            List<LoreAnchorExtractor.AnchorLink> links = entry.getValue();
-
-            ContentTitleRow lore = loreById.get(loreId);
-            if (lore == null) continue;
-
-            List<String> headersToExtract = links.stream()
-                    .map(LoreAnchorExtractor.AnchorLink::header)
-                    .toList();
-
-            Map<String, String> excerptsByHeader = LoreContentParser.extractAllExcerpts(
-                    lore.getContent(),
-                    headersToExtract,
-                    canSeeAll,
-                    viewerRoleIds
-            );
-
-            for (var link : links) {
-                String headerSlug = LoreContentParser.textToSlug(link.header());
-                String headerUrl = LoreContentParser.encodeHeaderSlug(link.header());
-                String headerContent = excerptsByHeader.get(headerSlug);
-
-                if (headerContent != null && !headerContent.isEmpty()) {
-                    ExcerptResponse response = new ExcerptResponse(
-                            loreId,
-                            lore.getTitle(),
-                            headerContent,
-                            loreId + "#" + headerUrl
-                    );
-                    excerpts.add(response);
-                }
-            }
-        }
-
-        return excerpts;
-    }
-
-    private Map<Long, ContentTitleRow> getLoreContent(Long roomId, List<Long> loreIds, boolean canSeeAll, Set<Long> roleIds) {
-        long[] roleArr = roleIds == null ? new long[0] : roleIds.stream().mapToLong(Long::longValue).toArray();
-        List<ContentTitleRow> rows = loreRepository.findContentAndTitleByIdsAndRoomId(
-                roomId,
-                loreIds.stream().mapToLong(Long::longValue).toArray(),
-                canSeeAll,
-                roleArr.length > 0,
-                roleArr);
-        return rows.stream()
-                .collect(Collectors.toMap(ContentTitleRow::getId, r -> r));
     }
 
     private void assertCanReadCharacter(Account account, Long roomId, Long characterId, Set<Long> viewerRoleIds) {

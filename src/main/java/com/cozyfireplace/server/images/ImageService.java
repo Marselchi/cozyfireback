@@ -77,7 +77,7 @@ public class ImageService {
         byte[] webp = encodeWebp(image);
 
         if (webp.length > props.getMaxFileBytes()) {
-            throw new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE,
+            throw new ResponseStatusException(HttpStatus.CONTENT_TOO_LARGE,
                     "Encoded image exceeds max size of %d bytes".formatted(props.getMaxFileBytes()));
         }
 

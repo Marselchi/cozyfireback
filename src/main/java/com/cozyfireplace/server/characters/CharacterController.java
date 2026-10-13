@@ -144,20 +144,20 @@ public class CharacterController {
     }
 
     @Operation(
-            summary = "Get a character for user viewing (inline)",
-            description = "Returns a CharacterUserResponse with lore excerpts referenced from the character's content.",
+            summary = "Get a character for user viewing",
+            description = "Returns a CharacterUserResponse (no restricted-block leakage; includes isAuthor flag and unanswered question count).",
             responses = {
                     @ApiResponse(responseCode = "200", description = "OK"),
                     @ApiResponse(responseCode = "404", description = "Character not found or no access", content = @Content)
             }
     )
-    @GetMapping("/{roomId}/{characterId}/viewInline")
-    public ResponseEntity<CharacterUserResponse> getForUserInline(
+    @GetMapping("/{roomId}/{characterId}/view")
+    public ResponseEntity<CharacterUserResponse> getForUser(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        CharacterUserResponse response = characterService.getCharacterForUserInline(roomId, characterId, account);
+        CharacterUserResponse response = characterService.getCharacterForUser(roomId, characterId, account);
         return ResponseEntity.ok(response);
     }
 }

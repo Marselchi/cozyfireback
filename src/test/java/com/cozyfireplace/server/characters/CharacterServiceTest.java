@@ -2,9 +2,7 @@ package com.cozyfireplace.server.characters;
 
 import com.cozyfireplace.server.accounts.Account;
 import com.cozyfireplace.server.characters.dto.*;
-import com.cozyfireplace.server.lore.LoreAnchorExtractor;
-import com.cozyfireplace.server.lore.LoreRepository;
-import com.cozyfireplace.server.lore.dto.ContentTitleRow;
+import com.cozyfireplace.server.lore.blocks.BlockService;
 import com.cozyfireplace.server.notifications.event.CharacterEvent;
 import com.cozyfireplace.server.notifications.event.OperationType;
 import com.cozyfireplace.server.questions.QuestionRepository;
@@ -43,10 +41,9 @@ class CharacterServiceTest {
     @Mock private RoleService roleService;
     @Mock private RoomSecurityService roomSecurityService;
     @Mock private CharacterMapper characterMapper;
-    @Mock private LoreAnchorExtractor loreAnchorExtractor;
-    @Mock private LoreRepository loreRepository;
     @Mock private QuestionRepository questionRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private BlockService blockService;
 
     @InjectMocks
     private CharacterService characterService;
@@ -242,6 +239,8 @@ class CharacterServiceTest {
             Long roomId = 1L, charId = 200L;
             Account account = testAccount(1L, Set.of());
             CharacterSummaryRow summary = mock(CharacterSummaryRow.class);
+            String rawContent = "{restrictedBlock id=\"7\"}";
+            String expandedContent = "::: restrictedBlock {}\nsecret\n:::";
 
             when(roomSecurityService.isCreator(account)).thenReturn(true);
             // Stub access check inside assertCanReadCharacter
@@ -251,12 +250,15 @@ class CharacterServiceTest {
             when(characterRepository.findSummaryByIdAndRoomId(roomId, charId))
                     .thenReturn(Optional.of(summary));
             when(summary.getId()).thenReturn(charId);
+            when(summary.getContent()).thenReturn(rawContent);
+            when(blockService.expandBlocks(rawContent, account)).thenReturn(expandedContent);
             when(characterRepository.findRolesByCharacterIds(List.of(charId))).thenReturn(List.of());
-            when(characterMapper.toEditResponse(eq(summary), eq(List.of())))
+            when(characterMapper.toEditResponse(eq(summary), eq(expandedContent), eq(List.of())))
                     .thenReturn(mock(CharacterResponse.class));
 
             CharacterResponse result = characterService.getCharacterForEdit(roomId, charId, account);
             assertNotNull(result);
+            verify(blockService).expandBlocks(rawContent, account);
         }
 
         @Test
@@ -273,21 +275,19 @@ class CharacterServiceTest {
         }
     }
 
-    // ====== GET CHARACTER FOR USER INLINE ======
+    // ====== GET CHARACTER FOR USER VIEW ======
     @Nested
-    @DisplayName("getCharacterForUserInline")
-    class GetCharacterForUserInlineTests {
+    @DisplayName("getCharacterForUser")
+    class GetCharacterForUserTests {
 
         @Test
-        @DisplayName("should return inline response with excerpts")
-        void getCharacterForUserInline_success() {
+        @DisplayName("should return the user view (no excerpts) for the room creator")
+        void getCharacterForUser_creator() {
             long roomId = 1L;
             long charId = 200L, accountId = 1L;
             Account account = testAccount(accountId, Set.of());
             CharacterSummaryRow summary = mock(CharacterSummaryRow.class);
-            LoreAnchorExtractor.AnchorLink anchor = mock(LoreAnchorExtractor.AnchorLink.class);
-            ContentTitleRow loreRow = mock(ContentTitleRow.class);
-            String content = "# Header\nText";
+            String content = "Plain content";
 
             when(roomSecurityService.isCreator(account)).thenReturn(true);
             when(characterRepository.findSummaryByIdAndRoomId(roomId, charId))
@@ -295,52 +295,64 @@ class CharacterServiceTest {
             when(summary.getId()).thenReturn(charId);
             when(summary.getAccountId()).thenReturn(accountId);
             when(summary.getContent()).thenReturn(content);
+            when(blockService.expandBlocks(content, account)).thenReturn(content);
             when(characterRepository.findRolesByCharacterIds(List.of(charId))).thenReturn(List.of());
-            // Use ArrayList for mutable list (removeIf is called)
-            when(loreAnchorExtractor.extractAnchorLinks(content))
-                    .thenReturn(new ArrayList<>(List.of(anchor)));
-            when(anchor.loreId()).thenReturn(300L);
-            when(anchor.header()).thenReturn("header");
-            when(loreRepository.findContentAndTitleByIdsAndRoomId(
-                    eq(roomId), any(long[].class), eq(true), eq(false), any(long[].class)))
-                    .thenReturn(List.of(loreRow));
-            when(loreRow.getId()).thenReturn(300L);
-            when(loreRow.getContent()).thenReturn(content);
-            when(loreRow.getTitle()).thenReturn("Lore Title");
             when(questionRepository.countUnansweredByCharacterId(charId)).thenReturn(2L);
-            // Use any() for nullable parsedContent and complex excerpts list
             when(characterMapper.toUserResponse(
-                    any(), any(), anyBoolean(), anyList(), anyList(), eq(2L)))
+                    eq(summary), eq(content), eq(true), eq(List.of()), eq(2L)))
                     .thenReturn(mock(CharacterUserResponse.class));
 
-            CharacterUserResponse result = characterService.getCharacterForUserInline(roomId, charId, account);
+            CharacterUserResponse result = characterService.getCharacterForUser(roomId, charId, account);
             assertNotNull(result);
-            verify(loreAnchorExtractor).removeInvalidLinks(eq(content), anySet());
+            // Creator short-circuits the per-character visibility check
+            verify(characterRepository, never()).existsVisibleCharacter(anyLong(), anyLong(), anyBoolean(), anyBoolean(), any());
         }
 
         @Test
-        @DisplayName("should handle empty anchor links")
-        void getCharacterForUserInline_noAnchors() {
+        @DisplayName("should return the user view for a member who can read the character")
+        void getCharacterForUser_memberWithAccess() {
             long roomId = 1L;
             long charId = 200L, accountId = 1L;
             Account account = testAccount(accountId, Set.of());
             CharacterSummaryRow summary = mock(CharacterSummaryRow.class);
-            String content = "Plain text";
+            String content = "Plain content";
 
-            when(roomSecurityService.isCreator(account)).thenReturn(true);
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+            when(characterRepository.existsVisibleCharacter(
+                    eq(roomId), eq(charId), eq(false), eq(false), any(long[].class)))
+                    .thenReturn(true);
             when(characterRepository.findSummaryByIdAndRoomId(roomId, charId))
                     .thenReturn(Optional.of(summary));
             when(summary.getId()).thenReturn(charId);
-            when(summary.getAccountId()).thenReturn(accountId);
+            when(summary.getAccountId()).thenReturn(999L);
             when(summary.getContent()).thenReturn(content);
-            when(characterRepository.findRolesByCharacterIds(List.of(charId))).thenReturn(new ArrayList<>());
-            when(loreAnchorExtractor.extractAnchorLinks(content)).thenReturn(new ArrayList<>());
+            when(blockService.expandBlocks(content, account)).thenReturn(content);
+            when(characterRepository.findRolesByCharacterIds(List.of(charId))).thenReturn(List.of());
             when(questionRepository.countUnansweredByCharacterId(charId)).thenReturn(0L);
-            when(characterMapper.toUserResponse(any(), any(), anyBoolean(), anyList(), anyList(), eq(0L)))
+            when(characterMapper.toUserResponse(
+                    eq(summary), eq(content), eq(false), eq(List.of()), eq(0L)))
                     .thenReturn(mock(CharacterUserResponse.class));
 
-            CharacterUserResponse result = characterService.getCharacterForUserInline(roomId, charId, account);
+            CharacterUserResponse result = characterService.getCharacterForUser(roomId, charId, account);
             assertNotNull(result);
+            verify(characterRepository).existsVisibleCharacter(
+                    eq(roomId), eq(charId), eq(false), eq(false), any(long[].class));
+        }
+
+        @Test
+        @DisplayName("should throw when the character is not visible to the member")
+        void getCharacterForUser_forbidden() {
+            long roomId = 1L;
+            long charId = 200L;
+            Account account = testAccount(1L, Set.of());
+
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+            when(characterRepository.existsVisibleCharacter(
+                    eq(roomId), eq(charId), eq(false), eq(false), any(long[].class)))
+                    .thenReturn(false);
+
+            assertThrows(NotFoundException.class,
+                    () -> characterService.getCharacterForUser(roomId, charId, account));
         }
     }
 
