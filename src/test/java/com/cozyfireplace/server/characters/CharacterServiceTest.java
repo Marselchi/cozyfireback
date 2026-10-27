@@ -11,6 +11,7 @@ import com.cozyfireplace.server.roles.RoleService;
 import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -80,7 +81,7 @@ class CharacterServiceTest {
 
             when(roomRepository.findRoomUrlById(roomId)).thenReturn(Optional.of(roomResp));
             when(characterMapper.toEntity(request, account)).thenReturn(character);
-            when(roleService.resolveRoles(anyList())).thenReturn(Set.of());
+            when(roleService.resolveRoles(anyList(), eq(roomId))).thenReturn(Set.of());
             when(characterRepository.save(any(Character.class))).thenAnswer(inv -> inv.getArgument(0));
             when(character.getId()).thenReturn(charId);
             when(request.roleIds()).thenReturn(null);
@@ -116,7 +117,7 @@ class CharacterServiceTest {
 
             when(roomRepository.findRoomUrlById(roomId)).thenReturn(Optional.of(roomResp));
             when(characterMapper.toEntity(request, account)).thenReturn(character);
-            when(roleService.resolveRoles(eq(List.of()))).thenReturn(Set.of());
+            when(roleService.resolveRoles(eq(List.of()), eq(roomId))).thenReturn(Set.of());
             when(characterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(character.getId()).thenReturn(charId);
             when(request.roleIds()).thenReturn(Set.of());
@@ -125,7 +126,7 @@ class CharacterServiceTest {
 
             Long result = characterService.createCharacter(roomId, account, request);
             assertEquals(charId, result);
-            verify(roleService).resolveRoles(eq(List.of()));
+            verify(roleService).resolveRoles(eq(List.of()), eq(roomId));
         }
     }
 
@@ -144,24 +145,71 @@ class CharacterServiceTest {
             Character character = mock(Character.class);
             CharacterRequest request = mock(CharacterRequest.class);
 
-            when(characterRepository.findById(charId)).thenReturn(Optional.of(character));
+            when(characterRepository.findByRoomIdAndId(roomId, charId)).thenReturn(Optional.of(character));
             when(roomRepository.findRoomUrlById(roomId)).thenReturn(Optional.of(roomResp));
-            when(roleService.updateRolesCharacter(eq(character), any())).thenReturn(character);
+            when(character.getAccount()).thenReturn(account);
+            when(roleService.updateRolesCharacter(eq(character), any(), eq(roomId))).thenReturn(character);
             when(request.name()).thenReturn("Updated");
             when(request.roleIds()).thenReturn(Set.of(5L));
 
-            characterService.updateCharacter(charId, request, account, roomId);
+            characterService.updateCharacter(roomId, charId, request, account);
 
             verify(characterRepository).save(character);
         }
 
         @Test
-        @DisplayName("should throw when character not found")
+        @DisplayName("should update character when the caller is the room creator, not the author")
+        void updateCharacter_byCreator() {
+            long charId = 200L;
+            long roomId = 1L;
+            Account creator = testAccount(999L, Set.of());
+            RoomTextResponse roomResp = testRoom();
+            Account author = testAccount(1L, Set.of());
+            Character character = mock(Character.class);
+            CharacterRequest request = mock(CharacterRequest.class);
+
+            when(characterRepository.findByRoomIdAndId(roomId, charId)).thenReturn(Optional.of(character));
+            when(roomRepository.findRoomUrlById(roomId)).thenReturn(Optional.of(roomResp));
+            when(character.getAccount()).thenReturn(author);
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+            when(roleService.updateRolesCharacter(eq(character), any(), eq(roomId))).thenReturn(character);
+            when(request.roleIds()).thenReturn(Set.of());
+
+            characterService.updateCharacter(roomId, charId, request, creator);
+
+            verify(characterRepository).save(character);
+        }
+
+        @Test
+        @DisplayName("should throw when the character is not in this room")
         void updateCharacter_notFound() {
-            when(characterRepository.findById(200L)).thenReturn(Optional.empty());
+            when(characterRepository.findByRoomIdAndId(1L, 200L)).thenReturn(Optional.empty());
+
             assertThrows(NotFoundException.class,
-                    () -> characterService.updateCharacter(200L, mock(CharacterRequest.class),
-                            testAccount(1L, Set.of()), 1L));
+                    () -> characterService.updateCharacter(1L, 200L, mock(CharacterRequest.class),
+                            testAccount(1L, Set.of())));
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("should throw ForbiddenException when caller is not author or room creator")
+        void updateCharacter_forbidden() {
+            long charId = 200L;
+            long roomId = 1L, accountId = 1L;
+            Account account = testAccount(accountId, Set.of());
+            Account otherAccount = testAccount(999L, Set.of());
+            RoomTextResponse roomResp = testRoom();
+            Character character = mock(Character.class);
+            CharacterRequest request = mock(CharacterRequest.class);
+
+            when(characterRepository.findByRoomIdAndId(roomId, charId)).thenReturn(Optional.of(character));
+            when(roomRepository.findRoomUrlById(roomId)).thenReturn(Optional.of(roomResp));
+            when(character.getAccount()).thenReturn(otherAccount);
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class,
+                    () -> characterService.updateCharacter(roomId, charId, request, account));
+            verify(characterRepository, never()).save(any());
         }
     }
 
@@ -169,10 +217,63 @@ class CharacterServiceTest {
     @Nested
     @DisplayName("deleteCharacter")
     class DeleteCharacterTests {
+
         @Test
-        void deleteCharacter_success() {
-            characterService.deleteCharacter(200L);
-            verify(characterRepository).deleteById(200L);
+        @DisplayName("throws NotFound when the character is not in this room (no silent no-op)")
+        void deleteCharacter_notFound() {
+            when(characterRepository.findByRoomIdAndId(1L, 200L)).thenReturn(Optional.empty());
+
+            assertThrows(NotFoundException.class,
+                    () -> characterService.deleteCharacter(1L, 200L, testAccount(1L, Set.of())));
+            verify(characterRepository, never()).deleteById(anyLong());
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("deletes with account when caller is author")
+        void deleteCharacter_withAccount_author() {
+            long charId = 200L, roomId = 1L, accountId = 1L;
+            Account account = testAccount(accountId, Set.of());
+            Character character = mock(Character.class);
+
+            when(characterRepository.findByRoomIdAndId(roomId, charId)).thenReturn(Optional.of(character));
+            when(character.getAccount()).thenReturn(account);
+
+            characterService.deleteCharacter(roomId, charId, account);
+            verify(characterRepository).deleteById(charId);
+        }
+
+        @Test
+        @DisplayName("deletes when the caller is the room creator, not the author")
+        void deleteCharacter_byCreator() {
+            long charId = 200L, roomId = 1L;
+            Account creator = testAccount(999L, Set.of());
+            Account author = testAccount(1L, Set.of());
+            Character character = mock(Character.class);
+
+            when(characterRepository.findByRoomIdAndId(roomId, charId)).thenReturn(Optional.of(character));
+            when(character.getAccount()).thenReturn(author);
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+
+            characterService.deleteCharacter(roomId, charId, creator);
+            verify(characterRepository).deleteById(charId);
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when caller is not author or creator")
+        void deleteCharacter_withAccount_forbidden() {
+            long charId = 200L, roomId = 1L, accountId = 1L;
+            Account account = testAccount(accountId, Set.of());
+            Account otherAccount = testAccount(999L, Set.of());
+            Character character = mock(Character.class);
+
+            when(characterRepository.findByRoomIdAndId(roomId, charId)).thenReturn(Optional.of(character));
+            when(character.getAccount()).thenReturn(otherAccount);
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class,
+                    () -> characterService.deleteCharacter(roomId, charId, account));
+            verify(characterRepository, never()).deleteById(anyLong());
         }
     }
 
@@ -273,6 +374,25 @@ class CharacterServiceTest {
             assertThrows(NotFoundException.class,
                     () -> characterService.getCharacterForEdit(1L, 200L, account));
         }
+
+        @Test
+        @DisplayName("should throw ForbiddenException when caller is not author or room creator")
+        void getCharacterForEdit_forbiddenNotAuthorOrCreator() {
+            Long roomId = 1L, charId = 200L;
+            Account account = testAccount(1L, Set.of());
+            CharacterSummaryRow summary = mock(CharacterSummaryRow.class);
+
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+            when(characterRepository.existsVisibleCharacter(
+                    eq(roomId), eq(charId), eq(false), eq(false), any(long[].class)))
+                    .thenReturn(true);
+            when(characterRepository.findSummaryByIdAndRoomId(roomId, charId))
+                    .thenReturn(Optional.of(summary));
+            when(summary.getAccountId()).thenReturn(999L);
+
+            assertThrows(ForbiddenException.class,
+                    () -> characterService.getCharacterForEdit(roomId, charId, account));
+        }
     }
 
     // ====== GET CHARACTER FOR USER VIEW ======
@@ -372,7 +492,7 @@ class CharacterServiceTest {
 
             when(roomRepository.findRoomUrlById(roomId)).thenReturn(Optional.of(roomResp));
             when(characterMapper.toEntity(request, account)).thenReturn(character);
-            when(roleService.resolveRoles(eq(List.of()))).thenReturn(Set.of());
+            when(roleService.resolveRoles(eq(List.of()), eq(roomId))).thenReturn(Set.of());
             when(characterRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(character.getId()).thenReturn(charId);
             when(request.roleIds()).thenReturn(null);
@@ -381,7 +501,7 @@ class CharacterServiceTest {
 
             Long result = characterService.createCharacter(roomId, account, request);
             assertEquals(charId, result);
-            verify(roleService).resolveRoles(eq(List.of()));
+            verify(roleService).resolveRoles(eq(List.of()), eq(roomId));
         }
     }
 }

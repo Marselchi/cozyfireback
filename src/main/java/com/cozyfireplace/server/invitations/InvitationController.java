@@ -33,7 +33,7 @@ public class InvitationController {
                             content = @Content(examples = @ExampleObject(name = "Invitation", value = """
                                     { "id": 12, "code": "8F3K-Q2P9" }
                                     """))),
-                    @ApiResponse(responseCode = "403", description = "Not allowed to create invitations", content = @Content),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may create invitations", content = @Content),
                     @ApiResponse(responseCode = "404", description = "Room not found", content = @Content)
             }
     )
@@ -69,13 +69,15 @@ public class InvitationController {
             description = "Revokes an existing invitation so it can no longer be used.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Invitation deleted"),
-                    @ApiResponse(responseCode = "404", description = "Invitation not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may revoke invitations", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Invitation not found in this room", content = @Content)
             }
     )
-    @DeleteMapping("/{invitationId}")
+    @DeleteMapping("/{roomId}/{invitationId}")
     public ResponseEntity<Void> deleteInvitation(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the invitation", required = true, example = "12") @PathVariable Long invitationId) {
-        invitationService.deleteInvitation(invitationId);
+        invitationService.deleteInvitation(roomId, invitationId);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
     }
 
@@ -85,10 +87,9 @@ public class InvitationController {
             description = "Returns all active invitations for the specified room.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "List of invitations returned"),
-                    @ApiResponse(responseCode = "403", description = "Not allowed to list invitations", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may list invitations", content = @Content)
             }
     )
-    //todo: checks
     @GetMapping("/{roomId}/all")
     public ResponseEntity<List<InvitationRespone>> getAllAccountsRoom(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId) {

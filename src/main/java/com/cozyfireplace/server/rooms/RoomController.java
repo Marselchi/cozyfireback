@@ -7,6 +7,7 @@ import com.cozyfireplace.server.lore.LoreExportService;
 import com.cozyfireplace.server.lore.LoreImportService;
 import com.cozyfireplace.server.rooms.dto.*;
 import com.cozyfireplace.server.rooms.roomDetails.RoomDetailsService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -33,6 +34,7 @@ public class RoomController {
     private final RoomDetailsService roomDetailsService;
     private final LoreImportService loreImportService;
     private final LoreExportService loreExportService;
+    private final RoomSecurityService roomSecurityService;
 
     @Operation(
             summary = "Create a room",
@@ -147,6 +149,7 @@ public class RoomController {
             responses = {
                     @ApiResponse(responseCode = "202", description = "Import accepted"),
                     @ApiResponse(responseCode = "400", description = "Unsupported filetype", content = @Content),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only room creator can import lore", content = @Content),
                     @ApiResponse(responseCode = "404", description = "Room not found", content = @Content)
             }
     )
@@ -168,6 +171,9 @@ public class RoomController {
             @ModelAttribute LoreImportRequest filters,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
+        if (!roomSecurityService.isCreator(account)) {
+            throw new ForbiddenException("Import lore", "only room creator can import lore");
+        }
         String filetype = filters.filetype();
         if ("md".equalsIgnoreCase(filetype)) {
             loreImportService.importMdFile(roomId, file, filters, account);
@@ -181,7 +187,7 @@ public class RoomController {
 
     @Operation(
             summary = "Export lore to a ZIP archive",
-            description = "Exports the room's lore as a downloadable ZIP archive. Options control whether tags, DM-only entries and spoilers are included.",
+            description = "Exports the room's lore as a downloadable ZIP archive. Options control whether tags and DM-only entries are included.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "ZIP archive of exported lore",
                             content = @Content(mediaType = MediaType.APPLICATION_OCTET_STREAM_VALUE)),

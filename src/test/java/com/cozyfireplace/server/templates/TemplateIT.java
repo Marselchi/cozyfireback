@@ -23,17 +23,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p>Templates are reusable text blocks authored by an account. Two behaviours are
  * worth calling out:
  * <ul>
- *   <li>the template collection is <b>global</b> — listing/detail/update/delete are not
- *       scoped to a room or to the author, only creation resolves the acting account
- *       through {@code @CurrentAccount} (numeric {@code roomId} path variable);</li>
- *   <li>delete is the only id-based mutation that verifies existence up front
- *       ({@code existsById} → 404), unlike the lenient role/tag deletes.</li>
+ *   <li>reads are <b>global</b> — listing and detail are not scoped to a room;
+ *       every mutation carries {@code {roomId}} in the path and resolves the acting
+ *       account through {@code @CurrentAccount} there;</li>
+ *   <li>update and delete resolve the template inside the path room
+ *       ({@code findByRoomIdAndId} → 404), so an id belonging to another room is
+ *       reported as missing rather than being edited or silently deleted.</li>
  * </ul>
  *
  * <p><b>Documented status map:</b> anonymous → 403; {@code @CurrentAccount} refused
- * for a non-member → 500 (unmapped AccessDeniedException); missing template → 404;
- * blank name/content → rejected by JPA bean validation at persist time (pinned as
- * "at least 400" so a future 400-with-hint refactor keeps the test meaningful).</p>
+ * for a non-member → 403 ({@code AccessDeniedException} mapped by
+ * {@code GlobalExceptionHandler}); an unknown room is just another room the profile
+ * has no account in → 403 too; missing template → 404;
+ * author/creator mismatch → 403; blank name/content → rejected by JPA bean validation
+ * at persist time (pinned as "at least 400" so a future 400-with-hint refactor keeps
+ * the test meaningful).</p>
  */
 @DisplayName("TemplateIT — /api/v1/templates")
 class TemplateIT extends BaseIntegrationTest {
@@ -87,16 +91,18 @@ class TemplateIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("authenticated user without an account in the room → 500 " +
-                "(AccessDeniedException from @CurrentAccount is not mapped by GlobalExceptionHandler)")
-        void create_nonMember_returns500_currentBehaviour() throws Exception {
+        @DisplayName("authenticated user without an account in the room → 403 " +
+                "(AccessDeniedException from @CurrentAccount is mapped by GlobalExceptionHandler)")
+        void create_nonMember_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
 
             mockMvc.perform(post("/api/v1/templates/{roomId}", room.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{ \"name\": \"Ghost\", \"content\": \"c\" }"))
-                    // Pinned on purpose: becomes 403 once AccessDeniedException gets an @ExceptionHandler.
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
+
+            assertThat(templateRepository.findAll().stream()
+                    .filter(t -> "Ghost".equals(t.getName()))).isEmpty();
         }
 
         @Test
@@ -190,7 +196,7 @@ class TemplateIT extends BaseIntegrationTest {
     }
 
     @Nested
-    @DisplayName("PUT /api/v1/templates/{templateId} — rename")
+    @DisplayName("PUT /api/v1/templates/{roomId}/{templateId} — rename")
     class UpdateTests {
 
         @Test
@@ -198,7 +204,7 @@ class TemplateIT extends BaseIntegrationTest {
         void update_success() throws Exception {
             long id = createViaApi(unique("Old Name"), "content");
 
-            mockMvc.perform(put("/api/v1/templates/{templateId}", id)
+            mockMvc.perform(put("/api/v1/templates/{roomId}/{templateId}", room.getId(), id)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{ \"name\": \"Renamed Template\" }"))
                     .andExpect(status().isNoContent());
@@ -209,15 +215,32 @@ class TemplateIT extends BaseIntegrationTest {
         @Test
         @DisplayName("unknown id → 404")
         void update_unknown_returns404() throws Exception {
-            mockMvc.perform(put("/api/v1/templates/{templateId}", 9999999L)
+            mockMvc.perform(put("/api/v1/templates/{roomId}/{templateId}", room.getId(), 9999999L)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{ \"name\": \"Ghost\" }"))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("a template from another room → 404 (no cross-room rename)")
+        void update_otherRoomTemplate_returns404() throws Exception {
+            long id = createViaApi(unique("Mine"), "content");
+            Profile strangerDm = newProfile("other-dm");
+            Room otherRoom = newRoomOwnedBy(strangerDm, "Other Room");
+
+            authenticateAs(strangerDm);
+            mockMvc.perform(put("/api/v1/templates/{roomId}/{templateId}", otherRoom.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{ \"name\": \"Stolen\" }"))
+                    .andExpect(status().isNotFound());
+
+            authenticateAs(dm);
+            assertThat(templateRepository.findById(id).orElseThrow().getName()).isNotEqualTo("Stolen");
+        }
     }
 
     @Nested
-    @DisplayName("DELETE /api/v1/templates/{templateId}")
+    @DisplayName("DELETE /api/v1/templates/{roomId}/{templateId}")
     class DeleteTests {
 
         @Test
@@ -225,17 +248,32 @@ class TemplateIT extends BaseIntegrationTest {
         void delete_success() throws Exception {
             long id = createViaApi(unique("Doomed"), "content");
 
-            mockMvc.perform(delete("/api/v1/templates/{templateId}", id))
+            mockMvc.perform(delete("/api/v1/templates/{roomId}/{templateId}", room.getId(), id))
                     .andExpect(status().isNoContent());
 
             assertThat(templateRepository.findById(id)).isEmpty();
         }
 
         @Test
-        @DisplayName("unknown id → 404 (delete checks existence up front, unlike role/tag deletes)")
+        @DisplayName("unknown id → 404 (delete resolves the template inside the path room)")
         void delete_unknown_returns404() throws Exception {
-            mockMvc.perform(delete("/api/v1/templates/{templateId}", 9999999L))
+            mockMvc.perform(delete("/api/v1/templates/{roomId}/{templateId}", room.getId(), 9999999L))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a template from another room → 404 and survives")
+        void delete_otherRoomTemplate_returns404() throws Exception {
+            long id = createViaApi(unique("Keep me"), "content");
+            Profile strangerDm = newProfile("other-dm");
+            Room otherRoom = newRoomOwnedBy(strangerDm, "Other Room");
+
+            authenticateAs(strangerDm);
+            mockMvc.perform(delete("/api/v1/templates/{roomId}/{templateId}", otherRoom.getId(), id))
+                    .andExpect(status().isNotFound());
+
+            authenticateAs(dm);
+            assertThat(templateRepository.findById(id)).isPresent();
         }
     }
 

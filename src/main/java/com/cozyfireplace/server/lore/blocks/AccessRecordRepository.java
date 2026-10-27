@@ -20,6 +20,18 @@ public interface AccessRecordRepository extends JpaRepository<AccessRecord, Long
             "WHERE ar.id = :id")
     Optional<AccessRecordWithAccount> findByIdWithAccount(@Param("id") Long id);
 
+    // Комната записи выводится из её блока: чужой recordId даёт пустой результат (404),
+    // а не сброс/выдачу доступа к блоку из другой комнаты.
+    @Query("SELECT ar AS record, acc.id AS userId, acc.name AS userName " +
+            "FROM AccessRecord ar " +
+            "LEFT JOIN Account acc ON acc.accountChar.id = ar.accountChar.id " +
+            "JOIN ar.block b " +
+            "LEFT JOIN b.lore l LEFT JOIN l.account la " +
+            "LEFT JOIN b.character c LEFT JOIN c.account ca " +
+            "WHERE ar.id = :id AND coalesce(la.room.id, ca.room.id) = :roomId")
+    Optional<AccessRecordWithAccount> findByIdWithAccountInRoom(@Param("id") Long id,
+                                                                @Param("roomId") Long roomId);
+
     Optional<AccessRecord> findByBlockIdAndAccountCharId(Long blockId, Long accountCharId);
 
     @Query("""

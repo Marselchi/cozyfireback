@@ -118,9 +118,9 @@ class SessionServiceTest {
             when(roomSecurityService.isCreator(roomId)).thenReturn(true);
             when(request.accountIds()).thenReturn(invitedIds);
 
-            // ВАЖНО: any(Iterable.class), а не anyList() — findAllById принимает Iterable
-            when(accountRepository.findAllById(any()))
-                    .thenReturn(List.of(invited));
+            // Приглашённые аккаунты проверяются по составу комнаты:
+            // чужой/несуществующий id больше не теряется молча, а даёт 404.
+            when(accountRepository.findAllByRoomId(roomId)).thenReturn(List.of(invited));
 
             when(sessionMapper.toEntity(request, creator)).thenReturn(session);
             when(sessionRepository.save(session)).thenAnswer(inv -> inv.getArgument(0));
@@ -134,6 +134,24 @@ class SessionServiceTest {
                     eq(sessionId),
                     argThat(ids -> ids != null && ids.contains(2L) && ids.size() == 1)
             );
+        }
+
+        @Test
+        @DisplayName("should throw NotFoundException if an invited account is not in the room")
+        void createSession_invitesForeignAccount() {
+            Long roomId = 1L;
+            Account creator = testAccount(1L, "DM", testRoom(roomId));
+            SessionRequest request = mock(SessionRequest.class);
+
+            when(roomSecurityService.isCreator(roomId)).thenReturn(true);
+            when(request.accountIds()).thenReturn(Set.of(2L));
+            // Комната содержит только самого создателя — id 2 принадлежит другой комнате.
+            when(accountRepository.findAllByRoomId(roomId)).thenReturn(List.of(creator));
+
+            assertThrows(NotFoundException.class,
+                    () -> sessionService.createSession(roomId, creator, request));
+            verify(sessionRepository, never()).save(any());
+            verify(participationService, never()).createParticipations(anyLong(), anyList());
         }
 
         @Test
@@ -163,14 +181,14 @@ class SessionServiceTest {
             SessionRequest request = mock(SessionRequest.class);
             Instant newTime = Instant.now().plusSeconds(3600);
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(session));
             when(roomSecurityService.isCreator(roomId)).thenReturn(true);
             when(request.time()).thenReturn(newTime);
             when(request.description()).thenReturn("Updated");
             when(sessionRepository.save(session)).thenAnswer(inv -> inv.getArgument(0));
             when(sessionMapper.toResponse(eq(session), anyList())).thenReturn(mock(SessionResponse.class));
 
-            SessionResponse result = sessionService.updateSession(sessionId, request);
+            SessionResponse result = sessionService.updateSession(roomId, sessionId, request);
 
             assertNotNull(result);
             verify(session).setTime(newTime);
@@ -186,20 +204,21 @@ class SessionServiceTest {
             Account creator = testAccount(1L, "DM", room);
             Session session = testSession(sessionId, creator, Instant.now());
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(session));
             when(roomSecurityService.isCreator(roomId)).thenReturn(false);
 
             assertThrows(ForbiddenException.class,
-                    () -> sessionService.updateSession(sessionId, mock(SessionRequest.class)));
+                    () -> sessionService.updateSession(roomId, sessionId, mock(SessionRequest.class)));
         }
 
         @Test
-        @DisplayName("should throw NotFoundException if session not found")
+        @DisplayName("should throw NotFoundException if session is not in the room")
         void updateSession_notFound() {
-            when(sessionRepository.findById(100L)).thenReturn(Optional.empty());
+            when(sessionRepository.findByRoomIdAndId(1L, 100L)).thenReturn(Optional.empty());
 
             assertThrows(NotFoundException.class,
-                    () -> sessionService.updateSession(100L, mock(SessionRequest.class)));
+                    () -> sessionService.updateSession(1L, 100L, mock(SessionRequest.class)));
+            verifyNoInteractions(roomSecurityService);
         }
     }
 
@@ -217,10 +236,10 @@ class SessionServiceTest {
             Account creator = testAccount(1L, "DM", room);
             Session session = testSession(sessionId, creator, Instant.now());
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(session));
             when(roomSecurityService.isCreator(roomId)).thenReturn(true);
 
-            sessionService.deleteSession(sessionId);
+            sessionService.deleteSession(roomId, sessionId);
 
             verify(sessionRepository).delete(session);
         }
@@ -234,11 +253,22 @@ class SessionServiceTest {
             Account creator = testAccount(1L, "DM", room);
             Session session = testSession(sessionId, creator, Instant.now());
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(session));
             when(roomSecurityService.isCreator(roomId)).thenReturn(false);
 
             assertThrows(ForbiddenException.class,
-                    () -> sessionService.deleteSession(sessionId));
+                    () -> sessionService.deleteSession(roomId, sessionId));
+            verify(sessionRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("should throw NotFoundException if session belongs to another room")
+        void deleteSession_notFound() {
+            when(sessionRepository.findByRoomIdAndId(1L, 100L)).thenReturn(Optional.empty());
+
+            assertThrows(NotFoundException.class,
+                    () -> sessionService.deleteSession(1L, 100L));
+            verify(sessionRepository, never()).delete(any());
         }
     }
 
@@ -405,14 +435,15 @@ class SessionServiceTest {
         @DisplayName("should accept invitation successfully")
         void acknowledgeSession_accept() {
             long sessionId = 100L;
+            long roomId = 1L;
             long accountId = 2L;
-            Account participant = testAccount(accountId, "Player", testRoom(1L));
+            Account participant = testAccount(accountId, "Player", testRoom(roomId));
             Participation participation = testParticipation(sessionId, accountId, null);
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(mock(Session.class)));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(mock(Session.class)));
             when(participationService.findBySessionId(sessionId)).thenReturn(List.of(participation));
 
-            sessionService.acknowledgeSession(sessionId, participant, true);
+            sessionService.acknowledgeSession(roomId, sessionId, participant, true);
 
             verify(participationService).acknowledgeParticipation(eq(sessionId), eq(participant), eq(true));
         }
@@ -421,24 +452,26 @@ class SessionServiceTest {
         @DisplayName("should throw ForbiddenException if user not invited")
         void acknowledgeSession_notInvited() {
             long sessionId = 100L;
+            long roomId = 1L;
             long accountId = 999L;
-            Account stranger = testAccount(accountId, "Stranger", testRoom(1L));
+            Account stranger = testAccount(accountId, "Stranger", testRoom(roomId));
             Participation other = testParticipation(sessionId, 1L, null);
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(mock(Session.class)));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(mock(Session.class)));
             when(participationService.findBySessionId(sessionId)).thenReturn(List.of(other));
 
             assertThrows(ForbiddenException.class,
-                    () -> sessionService.acknowledgeSession(sessionId, stranger, true));
+                    () -> sessionService.acknowledgeSession(roomId, sessionId, stranger, true));
         }
 
         @Test
-        @DisplayName("should throw NotFoundException if session not found")
+        @DisplayName("should throw NotFoundException if session is not in the room")
         void acknowledgeSession_notFound() {
-            when(sessionRepository.findById(100L)).thenReturn(Optional.empty());
+            when(sessionRepository.findByRoomIdAndId(1L, 100L)).thenReturn(Optional.empty());
 
             assertThrows(NotFoundException.class,
-                    () -> sessionService.acknowledgeSession(100L, mock(Account.class), true));
+                    () -> sessionService.acknowledgeSession(1L, 100L, mock(Account.class), true));
+            verifyNoInteractions(participationService);
         }
     }
 
@@ -479,14 +512,14 @@ class SessionServiceTest {
             Session session = testSession(sessionId, creator, Instant.now());
             SessionRequest request = mock(SessionRequest.class);
 
-            when(sessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+            when(sessionRepository.findByRoomIdAndId(roomId, sessionId)).thenReturn(Optional.of(session));
             when(roomSecurityService.isCreator(roomId)).thenReturn(true);
             when(request.time()).thenReturn(null);
             when(request.description()).thenReturn("Only description");
             when(sessionRepository.save(session)).thenAnswer(inv -> inv.getArgument(0));
             when(sessionMapper.toResponse(eq(session), anyList())).thenReturn(mock(SessionResponse.class));
 
-            SessionResponse result = sessionService.updateSession(sessionId, request);
+            SessionResponse result = sessionService.updateSession(roomId, sessionId, request);
 
             assertNotNull(result);
             verify(session).setDescription("Only description");

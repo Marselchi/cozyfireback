@@ -33,8 +33,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p><b>Documented status map</b> (consistent across the whole IT suite):
  * <ul>
  *   <li>anonymous request → 403;</li>
- *   <li>{@code @CurrentAccount} write endpoints with a stranger / unknown room → 500
- *       (the argument resolver's AccessDeniedException is unmapped);</li>
+ *   <li>{@code @CurrentAccount} endpoints with a profile that has no account in the path room
+ *       (stranger or unknown room) → 403 (the resolver's {@code AccessDeniedException} is mapped
+ *       by {@code GlobalExceptionHandler});</li>
  *   <li>bean-validation violations → 400 with {@code $.validationErrors.<field>};</li>
  *   <li>{@code NotFoundException} (missing question / lore / character) → 404;</li>
  *   <li>the contradictory filter combination {@code loreId + hasLore=false} raises a plain
@@ -170,13 +171,13 @@ class QuestionIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("stranger without an account in the room → 500 (unmapped AccessDeniedException)")
-        void create_nonMember_returns500_currentBehaviour() throws Exception {
+        @DisplayName("stranger without an account in the room → 403 (resolver AccessDeniedException)")
+        void create_nonMember_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
             mockMvc.perform(post("/api/v1/questions/{roomId}", room.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(createBody("T", "B", null, null, null)))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -287,7 +288,7 @@ class QuestionIT extends BaseIntegrationTest {
     }
 
     @Nested
-    @DisplayName("PUT /api/v1/questions/{id}")
+    @DisplayName("PUT /api/v1/questions/{roomId}/{id}")
     class UpdateTests {
 
         @Test
@@ -296,7 +297,7 @@ class QuestionIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, createBody("Old", "Old body", 1L, null, null));
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(put("/api/v1/questions/{id}", id)
+            mockMvc.perform(put("/api/v1/questions/{roomId}/{id}", room.getId(), id)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new QuestionUpdateRequest("New", "New body", 3L))))
                     .andExpect(status().isOk())
@@ -310,10 +311,26 @@ class QuestionIT extends BaseIntegrationTest {
         @DisplayName("unknown question id → 404")
         void update_unknown_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(put("/api/v1/questions/{id}", 9_999_999L)
+            mockMvc.perform(put("/api/v1/questions/{roomId}/{id}", room.getId(), 9_999_999L)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new QuestionUpdateRequest("T", "B", null))))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a question from another room → 404 (no cross-room edit)")
+        void update_otherRoomQuestion_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, createBody("Mine", "B", null, null, null));
+            // memberProfile has an account in the second room, so @CurrentAccount resolves there
+            Room otherRoom = newRoomOwnedBy(memberProfile, "Other Room");
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(put("/api/v1/questions/{roomId}/{id}", otherRoom.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(new QuestionUpdateRequest("Stolen", "B", null))))
+                    .andExpect(status().isNotFound());
+
+            assertThat(questionRepository.findById(id).orElseThrow().getTitle()).isEqualTo("Mine");
         }
 
         @Test
@@ -322,7 +339,7 @@ class QuestionIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, createBody("T", "B", null, null, null));
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(put("/api/v1/questions/{id}", id)
+            mockMvc.perform(put("/api/v1/questions/{roomId}/{id}", room.getId(), id)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new QuestionUpdateRequest("T", "", null))))
                     .andExpect(status().isBadRequest())
@@ -331,7 +348,7 @@ class QuestionIT extends BaseIntegrationTest {
     }
 
     @Nested
-    @DisplayName("DELETE /api/v1/questions/{id}")
+    @DisplayName("DELETE /api/v1/questions/{roomId}/{id}")
     class DeleteTests {
 
         @Test
@@ -340,18 +357,31 @@ class QuestionIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, createBody("Doomed", "B", null, null, null));
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/questions/{id}", id))
+            mockMvc.perform(delete("/api/v1/questions/{roomId}/{id}", room.getId(), id))
                     .andExpect(status().isNoContent());
 
             assertThat(questionRepository.findById(id)).isEmpty();
         }
 
         @Test
-        @DisplayName("unknown question id → 404 (deleteQuestion checks existsById first)")
+        @DisplayName("unknown question id → 404 (no silent no-op)")
         void delete_unknown_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/questions/{id}", 9_999_999L))
+            mockMvc.perform(delete("/api/v1/questions/{roomId}/{id}", room.getId(), 9_999_999L))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a question from another room → 404 (no cross-room delete)")
+        void delete_otherRoomQuestion_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, createBody("Keep me", "B", null, null, null));
+            Room otherRoom = newRoomOwnedBy(memberProfile, "Other Room");
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/questions/{roomId}/{id}", otherRoom.getId(), id))
+                    .andExpect(status().isNotFound());
+
+            assertThat(questionRepository.findById(id)).isPresent();
         }
     }
 

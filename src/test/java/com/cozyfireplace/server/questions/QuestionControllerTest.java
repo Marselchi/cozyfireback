@@ -31,8 +31,8 @@ import static org.mockito.Mockito.when;
  * <p>
  * Thin HTTP facade over {@link QuestionService}. Each test pins the status code and the
  * forwarding of arguments (note create takes {@code (room, account, request)} but the
- * service is invoked as {@code (request, account, room)}, and the by-id / detail endpoints
- * accept a room id that is ignored).
+ * service is invoked as {@code (request, account, room)}; every other route forwards the
+ * {@code roomId} path variable so the service resolves the question inside that room).
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("QuestionController")
@@ -67,17 +67,18 @@ class QuestionControllerTest {
     }
 
     @Nested
-    @DisplayName("PUT /{id}")
+    @DisplayName("PUT /{roomId}/{id}")
     class Update {
 
         @Test
         @DisplayName("returns 200 with the updated question")
         void returnsOk() {
+            Account account = mock(Account.class);
             QuestionUpdateRequest request = new QuestionUpdateRequest("t", "b", 3L);
             QuestionResponse body = mock(QuestionResponse.class);
-            when(questionService.updateQuestion(QUESTION_ID, request)).thenReturn(body);
+            when(questionService.updateQuestion(ROOM_ID, QUESTION_ID, request, account)).thenReturn(body);
 
-            ResponseEntity<QuestionResponse> response = controller.updateQuestion(QUESTION_ID, request);
+            ResponseEntity<QuestionResponse> response = controller.updateQuestion(ROOM_ID, QUESTION_ID, request, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).isSameAs(body);
@@ -85,16 +86,18 @@ class QuestionControllerTest {
     }
 
     @Nested
-    @DisplayName("DELETE /{id}")
+    @DisplayName("DELETE /{roomId}/{id}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and forwards the id")
+        @DisplayName("returns 204 and forwards room, id and account")
         void returnsNoContent() {
-            ResponseEntity<Void> response = controller.deleteQuestion(QUESTION_ID);
+            Account account = mock(Account.class);
+
+            ResponseEntity<Void> response = controller.deleteQuestion(ROOM_ID, QUESTION_ID, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(questionService).deleteQuestion(QUESTION_ID);
+            verify(questionService).deleteQuestion(ROOM_ID, QUESTION_ID, account);
             verifyNoMoreInteractions(questionService);
         }
     }
@@ -104,10 +107,10 @@ class QuestionControllerTest {
     class Get {
 
         @Test
-        @DisplayName("returns 200 fetching by question id (room id ignored)")
+        @DisplayName("returns 200 fetching the question inside the room")
         void returnsOk() {
             QuestionResponse body = mock(QuestionResponse.class);
-            when(questionService.getQuestionWithReplies(QUESTION_ID)).thenReturn(body);
+            when(questionService.getQuestionWithReplies(ROOM_ID, QUESTION_ID)).thenReturn(body);
 
             ResponseEntity<QuestionResponse> response = controller.getQuestion(QUESTION_ID, ROOM_ID);
 
@@ -125,7 +128,7 @@ class QuestionControllerTest {
         @DisplayName("returns 200 with the detail and forwarded answer focus")
         void returnsOk() {
             QuestionDetailResponse body = mock(QuestionDetailResponse.class);
-            when(questionService.getQuestionById(QUESTION_ID, 5L)).thenReturn(body);
+            when(questionService.getQuestionById(ROOM_ID, QUESTION_ID, 5L)).thenReturn(body);
 
             ResponseEntity<QuestionDetailResponse> response = controller.getQuestionById(QUESTION_ID, ROOM_ID, 5L);
 

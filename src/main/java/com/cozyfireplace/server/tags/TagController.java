@@ -34,6 +34,7 @@ public class TagController {
             description = "Creates a tag in the room identified by roomId.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Created"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage tags", content = @Content),
                     @ApiResponse(responseCode = "404", description = "Room not found", content = @Content),
                     @ApiResponse(responseCode = "409", description = "Tag already exists", content = @Content)
             }
@@ -59,7 +60,9 @@ public class TagController {
             description = "Updates a tag.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Updated"),
-                    @ApiResponse(responseCode = "404", description = "Tag not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage tags", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Tag not found in this room", content = @Content),
+                    @ApiResponse(responseCode = "409", description = "Tag already exists", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -69,7 +72,6 @@ public class TagController {
                     """))
     )
     @PutMapping("/{roomId}/{tagId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> update(
             @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
@@ -77,7 +79,7 @@ public class TagController {
             @PathVariable Long tagId,
             @Valid @RequestBody TagUpdateRequest request
     ) {
-        tagService.updateTag(tagId, request);
+        tagService.updateTag(roomId, tagId, request);
         return ResponseEntity.noContent().build();
     }
 
@@ -86,18 +88,18 @@ public class TagController {
             description = "Deletes a tag.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Deleted"),
-                    @ApiResponse(responseCode = "404", description = "Tag not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage tags", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Tag not found in this room", content = @Content)
             }
     )
     @DeleteMapping("/{roomId}/{tagId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> delete(
             @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
             @Parameter(description = "ID of the tag", required = true, example = "4")
             @PathVariable Long tagId
     ) {
-        tagService.deleteTag(tagId);
+        tagService.deleteTag(roomId, tagId);
         return ResponseEntity.noContent().build();
     }
 
@@ -107,18 +109,17 @@ public class TagController {
             responses = {
                     @ApiResponse(responseCode = "200", description = "OK",
                             content = @Content(schema = @Schema(implementation = TagResponse.class))),
-                    @ApiResponse(responseCode = "404", description = "Tag not found", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Tag not found in this room", content = @Content)
             }
     )
     @GetMapping("/{roomId}/{tagId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<TagResponse> getTag(
             @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
             @Parameter(description = "ID of the tag", required = true, example = "4")
             @PathVariable Long tagId
     ) {
-        return ResponseEntity.ok(tagService.getTag(tagId));
+        return ResponseEntity.ok(tagService.getTag(roomId, tagId));
     }
 
     @Operation(

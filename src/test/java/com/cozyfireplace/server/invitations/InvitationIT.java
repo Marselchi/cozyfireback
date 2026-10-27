@@ -22,18 +22,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Integration tests for {@link InvitationController} — {@code /api/v1/invitations}.
  *
- * <p>Invitations are short-lived join codes bound to a room. None of the endpoints take a
- * {@code @CurrentAccount} parameter — they are simply authentication-gated — except that the
- * "use" flow internally resolves the acting profile to mint a new room account.</p>
+ * <p>Invitations are short-lived join codes bound to a room. No handler takes a
+ * {@code @CurrentAccount} parameter — they are simply authentication-gated — but every
+ * mutation (and the list) calls {@code RoomSecurityService#isCreator(roomId)}, which
+ * internally resolves the acting profile's account <em>in the room from the path</em>.
+ * The "use" flow then resolves the acting profile to mint a new room account.</p>
  *
  * <p><b>Documented status map</b> (consistent across the whole IT suite):
  * <ul>
  *   <li>anonymous request → 403;</li>
- *   <li>create for a real room → 200 with an 8-character code; for an unknown room the lazy
- *       {@code getReferenceById} proxy is only materialised on insert, so the FK violation
- *       surfaces as 500 (pinned — <em>not</em> 404);</li>
+ *   <li>create for an unknown room → 404 ({@code findById} is checked up front now, so the
+ *       old FK-violation 500 is gone);</li>
+ *   <li>any room-scoped call by a profile without an account in that room → 403
+ *       ({@code AccessDeniedException} from the resolver, mapped by
+ *       {@code GlobalExceptionHandler});</li>
+ *   <li>room member who is not the creator → 403 (creator-only gate on create / list / delete);</li>
  *   <li>use with an unknown code → 404 (service {@code NotFoundException});</li>
- *   <li>delete is a bare {@code deleteById} and is therefore lenient: unknown id → 204 (pinned);</li>
+ *   <li>delete resolves the invitation inside the path room ({@code findByRoomIdAndId}) →
+ *       an unknown id, or one belonging to another room, is a 404, never a silent no-op;</li>
  *   <li>list returns only the given room's invitations.</li>
  * </ul>
  */
@@ -47,11 +53,14 @@ class InvitationIT extends BaseIntegrationTest {
 
     Profile creatorProfile;
     Room room;
+    Profile memberProfile;
 
     @BeforeEach
     void seedRoom() {
         creatorProfile = newProfile("dm");
         room = newRoomOwnedBy(creatorProfile, "Tavern");
+        memberProfile = newProfile("player");
+        newAccount(memberProfile, room, "Player One");
     }
 
     /** Creates an invitation via the API and returns the generated code (200 expected). */
@@ -79,11 +88,29 @@ class InvitationIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("unknown room id → 500 (FK violation on insert, pinned — not 404)")
-        void create_unknownRoom_returns500_currentBehaviour() throws Exception {
+        @DisplayName("unknown room id → 404 (the room is looked up before the insert)")
+        void create_unknownRoom_returns404() throws Exception {
             authenticateAs(creatorProfile);
             mockMvc.perform(post("/api/v1/invitations/{roomId}", 9_999_999L))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("room member who is not the creator → 403 (creator-only gate)")
+        void create_byMember_returns403() throws Exception {
+            authenticateAs(memberProfile);
+            mockMvc.perform(post("/api/v1/invitations/{roomId}", room.getId()))
+                    .andExpect(status().isForbidden());
+
+            assertThat(invitationRepository.findAllByRoomId(room.getId())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("profile without an account in the room → 403 (resolver AccessDeniedException)")
+        void create_byStranger_returns403() throws Exception {
+            authenticateAs(newProfile("stranger"));
+            mockMvc.perform(post("/api/v1/invitations/{roomId}", room.getId()))
+                    .andExpect(status().isForbidden());
         }
 
         @Test
@@ -159,34 +186,75 @@ class InvitationIT extends BaseIntegrationTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(0));
         }
+
+        @Test
+        @DisplayName("room member who is not the creator → 403 (invitation codes are creator-only)")
+        void list_byMember_returns403() throws Exception {
+            createCode(room.getId());
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/invitations/{roomId}/all", room.getId()))
+                    .andExpect(status().isForbidden());
+        }
     }
 
     @Nested
-    @DisplayName("DELETE /api/v1/invitations/{invitationId}")
+    @DisplayName("DELETE /api/v1/invitations/{roomId}/{invitationId}")
     class DeleteTests {
+
+        /** Creates an invitation via the API and returns its id (200 expected). */
+        private long createId() throws Exception {
+            MvcResult result = mockMvc.perform(post("/api/v1/invitations/{roomId}", room.getId()))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                    .path("id").asLong();
+        }
 
         @Test
         @DisplayName("revokes an existing invitation → 204")
         void delete_success() throws Exception {
             authenticateAs(creatorProfile);
-            MvcResult result = mockMvc.perform(post("/api/v1/invitations/{roomId}", room.getId()))
-                    .andExpect(status().isOk())
-                    .andReturn();
-            long id = objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
-                    .path("id").asLong();
+            long id = createId();
 
-            mockMvc.perform(delete("/api/v1/invitations/{invitationId}", id))
+            mockMvc.perform(delete("/api/v1/invitations/{roomId}/{invitationId}", room.getId(), id))
                     .andExpect(status().isNoContent());
 
             assertThat(invitationRepository.findById(id)).isEmpty();
         }
 
         @Test
-        @DisplayName("unknown id → 204 (bare deleteById is lenient, pinned)")
-        void delete_unknown_returns204_currentBehaviour() throws Exception {
+        @DisplayName("unknown id → 404 (the delete resolves the invitation inside the path room)")
+        void delete_unknown_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/invitations/{invitationId}", 9_999_999L))
-                    .andExpect(status().isNoContent());
+            mockMvc.perform(delete("/api/v1/invitations/{roomId}/{invitationId}", room.getId(), 9_999_999L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("an invitation from another room → 404 and survives (no cross-room revoke)")
+        void delete_otherRoomInvitation_returns404() throws Exception {
+            authenticateAs(creatorProfile);
+            long id = createId();
+            Room otherRoom = newRoomOwnedBy(creatorProfile, "Other Tavern");
+
+            mockMvc.perform(delete("/api/v1/invitations/{roomId}/{invitationId}", otherRoom.getId(), id))
+                    .andExpect(status().isNotFound());
+
+            assertThat(invitationRepository.findById(id)).isPresent();
+        }
+
+        @Test
+        @DisplayName("room member who is not the creator → 403 and the invitation survives")
+        void delete_byMember_returns403() throws Exception {
+            authenticateAs(creatorProfile);
+            long id = createId();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/invitations/{roomId}/{invitationId}", room.getId(), id))
+                    .andExpect(status().isForbidden());
+
+            assertThat(invitationRepository.findById(id)).isPresent();
         }
     }
 }

@@ -39,8 +39,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p><b>Documented status map</b> (consistent across the whole IT suite):
  * <ul>
  *   <li>anonymous request → 403;</li>
- *   <li>{@code @CurrentAccount} endpoints with a stranger / unknown room → 500
- *       (the argument resolver's AccessDeniedException is unmapped);</li>
+ *   <li>{@code @CurrentAccount} endpoints with a stranger / unknown room → 403
+ *       (the argument resolver's {@code AccessDeniedException} is mapped by
+ *       {@code GlobalExceptionHandler});</li>
  *   <li>every {@link ImageService} validation / not-found failure raises a
  *       {@code ResponseStatusException} (400 missing-file, 415 unsupported type, 400 undecodable,
  *       404 unknown image) — there is <b>no</b> {@code @ExceptionHandler} for it, so the generic
@@ -126,11 +127,11 @@ class ImageIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("unknown room id → 500 (@CurrentAccount cannot resolve an account there)")
-        void list_unknownRoom_returns500_currentBehaviour() throws Exception {
+        @DisplayName("unknown room id → 403 (@CurrentAccount cannot resolve an account there)")
+        void list_unknownRoom_returns403() throws Exception {
             authenticateAs(creatorProfile);
             mockMvc.perform(get("/api/v1/images/{roomId}", 9_999_999L))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
 
         @Test
@@ -169,11 +170,11 @@ class ImageIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("stranger without an account in the room → 500")
-        void quota_nonMember_returns500_currentBehaviour() throws Exception {
+        @DisplayName("stranger without an account in the room → 403")
+        void quota_nonMember_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
             mockMvc.perform(get("/api/v1/images/{roomId}/quota", room.getId()))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 

@@ -27,9 +27,9 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link AccountController}.
  * <p>
  * Thin facade over {@link AccountService}, {@link RoomSecurityService} and {@link AccountMapper}.
- * Pins status codes and argument forwarding; the {@code roomId} path variable is largely unused
- * (the resolved account already scopes the room), and {@code create} is a no-op stub that must not
- * touch any collaborator.
+ * Pins status codes and argument forwarding; every role mutation must forward the {@code roomId}
+ * path variable down to the service so the target account is resolved inside the right room, and
+ * {@code create} is a no-op stub that must not touch any collaborator.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AccountController")
@@ -85,32 +85,32 @@ class AccountControllerTest {
     }
 
     @Test
-    @DisplayName("DELETE role forwards account and role ids, ignoring the room id")
+    @DisplayName("DELETE role forwards room, account and role ids")
     void deleteAccountRole() {
         ResponseEntity<Void> response = controller.deleteAccountRole(ROOM_ID, ACCOUNT_ID, 5L);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(accountService).deleteAccountRole(ACCOUNT_ID, 5L);
+        verify(accountService).deleteAccountRole(ROOM_ID, ACCOUNT_ID, 5L);
     }
 
     @Test
-    @DisplayName("POST role forwards account and role ids, ignoring the room id")
+    @DisplayName("POST role forwards room, account and role ids")
     void addAccountRole() {
         ResponseEntity<Void> response = controller.addAccountRole(ROOM_ID, ACCOUNT_ID, 5L);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(accountService).addAccountRole(ACCOUNT_ID, 5L);
+        verify(accountService).addAccountRole(ROOM_ID, ACCOUNT_ID, 5L);
     }
 
     @Test
-    @DisplayName("PUT role forwards the swap request for the target account")
+    @DisplayName("PUT role forwards the room, target account and swap request")
     void updateAccountRole() {
         AccountUpdateRoleRequest request = new AccountUpdateRoleRequest(5L, 7L);
 
         ResponseEntity<Void> response = controller.updateAccountRole(ROOM_ID, ACCOUNT_ID, request);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        verify(accountService).updateAccountRole(ACCOUNT_ID, request);
+        verify(accountService).updateAccountRole(ROOM_ID, ACCOUNT_ID, request);
     }
 
     @Test

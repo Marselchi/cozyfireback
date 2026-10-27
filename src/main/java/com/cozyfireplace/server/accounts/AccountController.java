@@ -90,7 +90,8 @@ public class AccountController {
             description = "Detaches the given role from the target account in the room.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Role removed"),
-                    @ApiResponse(responseCode = "403", description = "Admin privileges required", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage roles", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Account or role not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -98,14 +99,12 @@ public class AccountController {
             description = "ID of the role to remove",
             content = @Content(examples = @ExampleObject(name = "roleId", value = "5"))
     )
-    //todo: checks admin and response
     @DeleteMapping("/{roomId}/{accountId}/role")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> deleteAccountRole(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the target account", required = true, example = "42") @PathVariable Long accountId,
             @RequestBody Long roleId) {
-        accountService.deleteAccountRole(accountId, roleId);
+        accountService.deleteAccountRole(roomId, accountId, roleId);
         return ResponseEntity.ok().build();
     }
 
@@ -114,7 +113,8 @@ public class AccountController {
             description = "Assigns the given role to the target account in the room.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Role added"),
-                    @ApiResponse(responseCode = "403", description = "Admin privileges required", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage roles", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Account or role not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -122,14 +122,12 @@ public class AccountController {
             description = "ID of the role to add",
             content = @Content(examples = @ExampleObject(name = "roleId", value = "5"))
     )
-    //todo: checks admin and response
     @PostMapping("/{roomId}/{accountId}/role")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> addAccountRole(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the target account", required = true, example = "42") @PathVariable Long accountId,
             @RequestBody Long roleId) {
-        accountService.addAccountRole(accountId, roleId);
+        accountService.addAccountRole(roomId, accountId, roleId);
         return ResponseEntity.ok().build();
     }
 
@@ -138,7 +136,8 @@ public class AccountController {
             description = "Swaps an existing role on the target account for a new one.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Role updated"),
-                    @ApiResponse(responseCode = "403", description = "Admin privileges required", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage roles", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Account or role not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -153,14 +152,12 @@ public class AccountController {
                             """
             ))
     )
-    //todo: checks admin and response
     @PutMapping("/{roomId}/{accountId}/role")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> updateAccountRole(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the target account", required = true, example = "42") @PathVariable Long accountId,
             @RequestBody AccountUpdateRoleRequest request) {
-        accountService.updateAccountRole(accountId, request);
+        accountService.updateAccountRole(roomId, accountId, request);
         return ResponseEntity.ok().build();
     }
 

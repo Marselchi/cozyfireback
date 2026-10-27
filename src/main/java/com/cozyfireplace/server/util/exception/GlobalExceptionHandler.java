@@ -5,6 +5,8 @@ import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -46,6 +48,24 @@ public class GlobalExceptionHandler {
         log.warn("Access forbidden: {}", ex.getMessage());
         ApiError error = ApiError.of(HttpStatus.FORBIDDEN, ex.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
+    /**
+     * Бросается {@code CurrentAccountResolver}, когда у авторизованного профиля нет аккаунта
+     * в комнате из пути. Без обработчика залетал в {@code handleGeneric} и отвечал 500.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiError> handleAccessDenied(AccessDeniedException ex) {
+        log.warn("Access denied: {}", ex.getMessage());
+        ApiError error = ApiError.of(HttpStatus.FORBIDDEN, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
+    @ExceptionHandler(AuthenticationCredentialsNotFoundException.class)
+    public ResponseEntity<ApiError> handleNotAuthenticated(AuthenticationCredentialsNotFoundException ex) {
+        log.warn("Not authenticated: {}", ex.getMessage());
+        ApiError error = ApiError.of(HttpStatus.UNAUTHORIZED, ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(error);
     }
 
     @ExceptionHandler(TokenInvalidException.class)

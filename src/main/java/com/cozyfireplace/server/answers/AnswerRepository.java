@@ -17,6 +17,17 @@ public interface AnswerRepository extends JpaRepository<Answer, Long> {
     @Query("SELECT a.author.id FROM Answer a WHERE a.id = :id")
     Optional<Long> findAuthorIdByAnswerId(@Param("id") Long id);
 
+    // Ответа у комнаты нет — комната берётся через автора. Чужой answerId даёт пустой
+    // результат (404), а не правку/удаление ответа из другой комнаты.
+    @Query("""
+        SELECT a FROM Answer a
+        JOIN a.author acc
+        JOIN acc.room r
+        WHERE r.id = :roomId AND a.id = :answerId
+    """)
+    Optional<Answer> findByRoomIdAndId(@Param("roomId") Long roomId,
+                                       @Param("answerId") Long answerId);
+
     @Query("""
     SELECT new com.cozyfireplace.server.answers.dto.AnswerWithAdminFlag(
         a,

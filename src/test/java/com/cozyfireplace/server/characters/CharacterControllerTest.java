@@ -68,7 +68,7 @@ class CharacterControllerTest {
     class Update {
 
         @Test
-        @DisplayName("returns 204 and forwards character id, body, account and room id")
+        @DisplayName("returns 204 and forwards room id, character id, body and account")
         void returnsNoContent() {
             Account account = org.mockito.Mockito.mock(Account.class);
             CharacterRequest request = org.mockito.Mockito.mock(CharacterRequest.class);
@@ -76,22 +76,24 @@ class CharacterControllerTest {
             ResponseEntity<Void> response = controller.update(ROOM_ID, CHARACTER_ID, request, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(characterService).updateCharacter(CHARACTER_ID, request, account, ROOM_ID);
+            verify(characterService).updateCharacter(ROOM_ID, CHARACTER_ID, request, account);
             verifyNoMoreInteractions(characterService);
         }
     }
 
     @Nested
-    @DisplayName("DELETE /{characterId}")
+    @DisplayName("DELETE /{roomId}/{characterId}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by character id")
+        @DisplayName("returns 204 and deletes the character inside the room from the path")
         void returnsNoContent() {
-            ResponseEntity<Void> response = controller.delete(CHARACTER_ID);
+            Account account = org.mockito.Mockito.mock(Account.class);
+
+            ResponseEntity<Void> response = controller.deleteInRoom(ROOM_ID, CHARACTER_ID, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(characterService).deleteCharacter(CHARACTER_ID);
+            verify(characterService).deleteCharacter(ROOM_ID, CHARACTER_ID, account);
         }
     }
 

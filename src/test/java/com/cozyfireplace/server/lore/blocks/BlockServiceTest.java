@@ -11,6 +11,8 @@ import com.cozyfireplace.server.lore.blocks.dto.*;
 import com.cozyfireplace.server.roles.Role;
 import com.cozyfireplace.server.roles.RoleRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
+import com.cozyfireplace.server.util.exception.NotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -70,6 +72,9 @@ class BlockServiceTest {
 
     @InjectMocks
     private BlockService blockService;
+
+    /** Every room-scoped mutation must be asserted against the room taken from the path. */
+    private static final Long ROOM_ID = 3L;
 
     // ================= helpers =================
 
@@ -691,35 +696,35 @@ class BlockServiceTest {
         }
 
         @Test
-        @DisplayName("unknown block throws EntityNotFoundException")
+        @DisplayName("unknown block throws NotFoundException")
         void blockNotFound() {
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.empty());
-            assertThrows(EntityNotFoundException.class,
-                    () -> blockService.roll(9L, account(null)));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.empty());
+            assertThrows(NotFoundException.class,
+                    () -> blockService.roll(ROOM_ID, 9L, account(null)));
         }
 
         @Test
         @DisplayName("rolling a block without chance config throws IllegalStateException")
         void notAChanceBlock() {
-            when(blockRepository.findByIdWithChanceAndRoles(9L))
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID))
                     .thenReturn(Optional.of(block(9L, "c", null, Set.of())));
             assertThrows(IllegalStateException.class,
-                    () -> blockService.roll(9L, account(500L)));
+                    () -> blockService.roll(ROOM_ID, 9L, account(500L)));
         }
 
         @Test
         @DisplayName("account without a character cannot roll")
         void noCharacter() {
-            when(blockRepository.findByIdWithChanceAndRoles(9L))
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID))
                     .thenReturn(Optional.of(chanceBlock(15)));
             assertThrows(IllegalStateException.class,
-                    () -> blockService.roll(9L, account(null)));
+                    () -> blockService.roll(ROOM_ID, 9L, account(null)));
         }
 
         @Test
         @DisplayName("an already resolved record cannot roll again")
         void alreadyRolled() {
-            when(blockRepository.findByIdWithChanceAndRoles(9L))
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID))
                     .thenReturn(Optional.of(chanceBlock(15)));
             AccessRecord existing = AccessRecord.builder()
                     .id(1L).status(AccessStatus.PASSED).build();
@@ -727,14 +732,14 @@ class BlockServiceTest {
                     .thenReturn(Optional.of(existing));
 
             assertThrows(IllegalStateException.class,
-                    () -> blockService.roll(9L, accountWithSkillModifier(0)));
+                    () -> blockService.roll(ROOM_ID, 9L, accountWithSkillModifier(0)));
         }
 
         @Test
         @DisplayName("a PENDING record may roll again and is updated in place")
         void pendingRecordRerolls() {
             Block b = chanceBlock(0); // threshold 0 -> every d20 roll passes
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.of(b));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.of(b));
             AccessRecord existing = AccessRecord.builder()
                     .id(1L).block(b).status(AccessStatus.PENDING).build();
             when(accessRecordRepository.findByBlockIdAndAccountCharId(9L, 500L))
@@ -744,7 +749,7 @@ class BlockServiceTest {
             when(blockMapper.toRollResultResponse(existing, 0, "Perception"))
                     .thenReturn(result);
 
-            assertSame(result, blockService.roll(9L, accountWithSkillModifier(0)));
+            assertSame(result, blockService.roll(ROOM_ID, 9L, accountWithSkillModifier(0)));
             assertEquals(AccessStatus.PASSED, existing.getStatus());
             assertNotNull(existing.getRollValue());
         }
@@ -753,14 +758,14 @@ class BlockServiceTest {
         @DisplayName("a roll below the impossible-free threshold always fails; skill modifier is stored")
         void guaranteedFailStoresFailStatus() {
             Block b = chanceBlock(1000); // d20 + modifier can never reach 1000
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.of(b));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.of(b));
             when(accessRecordRepository.findByBlockIdAndAccountCharId(9L, 500L))
                     .thenReturn(Optional.empty());
             when(accessRecordRepository.save(any(AccessRecord.class))).thenAnswer(inv -> inv.getArgument(0));
             when(blockMapper.toRollResultResponse(any(), eq(1000), eq("Perception")))
                     .thenReturn(mock(RollResultResponse.class));
 
-            blockService.roll(9L, accountWithSkillModifier(3));
+            blockService.roll(ROOM_ID, 9L, accountWithSkillModifier(3));
 
             ArgumentCaptor<AccessRecord> captor = ArgumentCaptor.forClass(AccessRecord.class);
             verify(accessRecordRepository).save(captor.capture());
@@ -774,14 +779,14 @@ class BlockServiceTest {
         @DisplayName("threshold 0 always passes")
         void guaranteedPassStoresPassedStatus() {
             Block b = chanceBlock(0);
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.of(b));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.of(b));
             when(accessRecordRepository.findByBlockIdAndAccountCharId(9L, 500L))
                     .thenReturn(Optional.empty());
             when(accessRecordRepository.save(any(AccessRecord.class))).thenAnswer(inv -> inv.getArgument(0));
             when(blockMapper.toRollResultResponse(any(), eq(0), eq("Perception")))
                     .thenReturn(mock(RollResultResponse.class));
 
-            blockService.roll(9L, accountWithSkillModifier(0));
+            blockService.roll(ROOM_ID, 9L, accountWithSkillModifier(0));
 
             ArgumentCaptor<AccessRecord> captor = ArgumentCaptor.forClass(AccessRecord.class);
             verify(accessRecordRepository).save(captor.capture());
@@ -792,7 +797,7 @@ class BlockServiceTest {
         @DisplayName("missing skill on the character contributes a 0 modifier")
         void missingSkillDefaultsToZeroModifier() {
             Block b = chanceBlock(0);
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.of(b));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.of(b));
             when(accessRecordRepository.findByBlockIdAndAccountCharId(9L, 500L))
                     .thenReturn(Optional.empty());
             when(accessRecordRepository.save(any(AccessRecord.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -800,7 +805,7 @@ class BlockServiceTest {
                     .thenReturn(mock(RollResultResponse.class));
 
             Account noSkills = account(500L); // account char exists but has no skills
-            blockService.roll(9L, noSkills);
+            blockService.roll(ROOM_ID, 9L, noSkills);
 
             ArgumentCaptor<AccessRecord> captor = ArgumentCaptor.forClass(AccessRecord.class);
             verify(accessRecordRepository).save(captor.capture());
@@ -837,13 +842,14 @@ class BlockServiceTest {
         @DisplayName("reset sets PENDING, clears the roll value and maps the response")
         void reset() {
             AccessRecord record = AccessRecord.builder().id(5L).status(AccessStatus.PASSED).rollValue(19).build();
-            when(accessRecordRepository.findByIdWithAccount(5L))
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID))
                     .thenReturn(Optional.of(recordHolder(record)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(accessRecordRepository.save(record)).thenReturn(record);
             AccessRecordResponse response = mock(AccessRecordResponse.class);
             when(blockMapper.toAccessRecordResponse(record, 42L, "Player")).thenReturn(response);
 
-            assertSame(response, blockService.resetAccess(5L));
+            assertSame(response, blockService.resetAccess(ROOM_ID, 5L));
             assertEquals(AccessStatus.PENDING, record.getStatus());
             assertNull(record.getRollValue());
         }
@@ -852,13 +858,14 @@ class BlockServiceTest {
         @DisplayName("grant sets GRANTED")
         void grant() {
             AccessRecord record = AccessRecord.builder().id(5L).status(AccessStatus.PENDING).build();
-            when(accessRecordRepository.findByIdWithAccount(5L))
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID))
                     .thenReturn(Optional.of(recordHolder(record)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(accessRecordRepository.save(record)).thenReturn(record);
             when(blockMapper.toAccessRecordResponse(record, 42L, "Player"))
                     .thenReturn(mock(AccessRecordResponse.class));
 
-            blockService.grantAccess(5L);
+            blockService.grantAccess(ROOM_ID, 5L);
 
             assertEquals(AccessStatus.GRANTED, record.getStatus());
         }
@@ -867,36 +874,52 @@ class BlockServiceTest {
         @DisplayName("deny sets DENIED")
         void deny() {
             AccessRecord record = AccessRecord.builder().id(5L).status(AccessStatus.PENDING).build();
-            when(accessRecordRepository.findByIdWithAccount(5L))
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID))
                     .thenReturn(Optional.of(recordHolder(record)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(accessRecordRepository.save(record)).thenReturn(record);
             when(blockMapper.toAccessRecordResponse(record, 42L, "Player"))
                     .thenReturn(mock(AccessRecordResponse.class));
 
-            blockService.denyAccess(5L);
+            blockService.denyAccess(ROOM_ID, 5L);
 
             assertEquals(AccessStatus.DENIED, record.getStatus());
         }
 
         @Test
-        @DisplayName("unknown access record throws EntityNotFoundException (reset)")
+        @DisplayName("unknown access record throws NotFoundException (reset)")
         void resetNotFound() {
-            when(accessRecordRepository.findByIdWithAccount(5L)).thenReturn(Optional.empty());
-            assertThrows(EntityNotFoundException.class, () -> blockService.resetAccess(5L));
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID)).thenReturn(Optional.empty());
+            assertThrows(NotFoundException.class, () -> blockService.resetAccess(ROOM_ID, 5L));
+            verifyNoInteractions(roomSecurityService);
         }
 
         @Test
-        @DisplayName("unknown access record throws EntityNotFoundException (grant)")
+        @DisplayName("unknown access record throws NotFoundException (grant)")
         void grantNotFound() {
-            when(accessRecordRepository.findByIdWithAccount(5L)).thenReturn(Optional.empty());
-            assertThrows(EntityNotFoundException.class, () -> blockService.grantAccess(5L));
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID)).thenReturn(Optional.empty());
+            assertThrows(NotFoundException.class, () -> blockService.grantAccess(ROOM_ID, 5L));
+            verifyNoInteractions(roomSecurityService);
         }
 
         @Test
-        @DisplayName("unknown access record throws EntityNotFoundException (deny)")
+        @DisplayName("unknown access record throws NotFoundException (deny)")
         void denyNotFound() {
-            when(accessRecordRepository.findByIdWithAccount(5L)).thenReturn(Optional.empty());
-            assertThrows(EntityNotFoundException.class, () -> blockService.denyAccess(5L));
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID)).thenReturn(Optional.empty());
+            assertThrows(NotFoundException.class, () -> blockService.denyAccess(ROOM_ID, 5L));
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("only the room creator may manage access")
+        void nonCreatorIsForbidden() {
+            AccessRecord record = AccessRecord.builder().id(5L).status(AccessStatus.PASSED).build();
+            when(accessRecordRepository.findByIdWithAccountInRoom(5L, ROOM_ID))
+                    .thenReturn(Optional.of(recordHolder(record)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class, () -> blockService.resetAccess(ROOM_ID, 5L));
+            verify(accessRecordRepository, never()).save(any(AccessRecord.class));
         }
     }
 
@@ -913,13 +936,14 @@ class BlockServiceTest {
             Block b = block(9L, "c", config, Set.of());
             Skill skill = Skill.builder().key("stealth").label("Stealth").build();
             ChanceConfigResponse response = mock(ChanceConfigResponse.class);
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.of(b));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.of(b));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(skillRepository.findById("stealth")).thenReturn(Optional.of(skill));
             when(blockRepository.save(b)).thenReturn(b);
             when(blockMapper.toChanceConfigResponse(config)).thenReturn(response);
 
             ChanceConfigResponse result = blockService.updateChanceConfig(
-                    9L, ChanceConfigRequest.builder().skill("stealth").threshold(17).build());
+                    ROOM_ID, 9L, ChanceConfigRequest.builder().skill("stealth").threshold(17).build());
 
             assertSame(response, result);
             assertSame(skill, config.getSkill());
@@ -931,14 +955,15 @@ class BlockServiceTest {
         void createsMissingConfig() {
             Block b = block(9L, "c", null, Set.of());
             Skill skill = Skill.builder().key("stealth").label("Stealth").build();
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.of(b));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.of(b));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(skillRepository.findById("stealth")).thenReturn(Optional.of(skill));
             when(blockRepository.save(any(Block.class))).thenAnswer(inv -> inv.getArgument(0));
             when(blockMapper.toChanceConfigResponse(any(ChanceConfig.class)))
                     .thenReturn(mock(ChanceConfigResponse.class));
 
             blockService.updateChanceConfig(
-                    9L, ChanceConfigRequest.builder().skill("stealth").threshold(12).build());
+                    ROOM_ID, 9L, ChanceConfigRequest.builder().skill("stealth").threshold(12).build());
 
             ArgumentCaptor<ChanceConfig> captor = ArgumentCaptor.forClass(ChanceConfig.class);
             verify(blockMapper).toChanceConfigResponse(captor.capture());
@@ -948,22 +973,36 @@ class BlockServiceTest {
         }
 
         @Test
-        @DisplayName("unknown block throws EntityNotFoundException")
+        @DisplayName("unknown block throws NotFoundException")
         void blockNotFound() {
-            when(blockRepository.findByIdWithChanceAndRoles(9L)).thenReturn(Optional.empty());
-            assertThrows(EntityNotFoundException.class, () -> blockService.updateChanceConfig(
-                    9L, ChanceConfigRequest.builder().skill("stealth").threshold(1).build()));
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID)).thenReturn(Optional.empty());
+            assertThrows(NotFoundException.class, () -> blockService.updateChanceConfig(
+                    ROOM_ID, 9L, ChanceConfigRequest.builder().skill("stealth").threshold(1).build()));
+            verifyNoInteractions(roomSecurityService);
         }
 
         @Test
-        @DisplayName("unknown skill throws EntityNotFoundException")
-        void skillNotFound() {
-            when(blockRepository.findByIdWithChanceAndRoles(9L))
+        @DisplayName("only the room creator may change the chance config")
+        void notCreatorIsForbidden() {
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID))
                     .thenReturn(Optional.of(block(9L, "c", null, Set.of())));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class, () -> blockService.updateChanceConfig(
+                    ROOM_ID, 9L, ChanceConfigRequest.builder().skill("stealth").threshold(1).build()));
+            verify(blockRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("unknown skill throws NotFoundException")
+        void skillNotFound() {
+            when(blockRepository.findByIdWithChanceAndRolesInRoom(9L, ROOM_ID))
+                    .thenReturn(Optional.of(block(9L, "c", null, Set.of())));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(skillRepository.findById("nope")).thenReturn(Optional.empty());
 
-            assertThrows(EntityNotFoundException.class, () -> blockService.updateChanceConfig(
-                    9L, ChanceConfigRequest.builder().skill("nope").threshold(1).build()));
+            assertThrows(NotFoundException.class, () -> blockService.updateChanceConfig(
+                    ROOM_ID, 9L, ChanceConfigRequest.builder().skill("nope").threshold(1).build()));
         }
     }
 

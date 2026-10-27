@@ -19,15 +19,16 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link AccountCharController}.
  * <p>
  * Thin facade over {@link AccountCharService}. Pins status codes and body passthrough; the
- * noteworthy behaviour is {@code create} building a location header from the room id (a String
- * path variable here) and the freshly created character id.
+ * noteworthy behaviours are {@code create} building a location header from the room id (a String
+ * path variable here) plus the freshly created character id, and {@code update} forwarding both the
+ * room and the character id so the service can resolve the character inside that room.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AccountCharController")
 class AccountCharControllerTest {
 
     private static final Long CHARACTER_ID = 10L;
-    private static final String ROOM_ID = "1";
+    private static final Long ROOM_ID = 1L;
 
     @Mock
     private AccountCharService accountCharService;
@@ -54,7 +55,7 @@ class AccountCharControllerTest {
         CharacterResponse body = mock(CharacterResponse.class);
         when(accountCharService.getCharacterSelf(account)).thenReturn(body);
 
-        ResponseEntity<CharacterResponse> response = controller.getCharacterSelf(1L, account);
+        ResponseEntity<CharacterResponse> response = controller.getCharacterSelf(ROOM_ID, account);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isSameAs(body);
@@ -68,7 +69,7 @@ class AccountCharControllerTest {
         CharacterResponse body = CharacterResponse.builder().id(CHARACTER_ID).build();
         when(accountCharService.createCharacter(request, account)).thenReturn(body);
 
-        ResponseEntity<CharacterResponse> response = controller.createCharacter(ROOM_ID, request, account);
+        ResponseEntity<CharacterResponse> response = controller.createCharacter(String.valueOf(ROOM_ID), request, account);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isSameAs(body);
@@ -77,17 +78,17 @@ class AccountCharControllerTest {
     }
 
     @Test
-    @DisplayName("PATCH /{roomId}/{characterId} forwards the update keyed by character id")
+    @DisplayName("PATCH /{roomId}/{characterId} forwards room and character id")
     void updateCharacter() {
         CharacterUpdateRequest request = mock(CharacterUpdateRequest.class);
         Account account = mock(Account.class);
         CharacterResponse body = mock(CharacterResponse.class);
-        when(accountCharService.updateCharacter(CHARACTER_ID, request, account)).thenReturn(body);
+        when(accountCharService.updateCharacter(ROOM_ID, CHARACTER_ID, request, account)).thenReturn(body);
 
         ResponseEntity<CharacterResponse> response = controller.updateCharacter(ROOM_ID, CHARACTER_ID, request, account);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isSameAs(body);
-        verify(accountCharService).updateCharacter(CHARACTER_ID, request, account);
+        verify(accountCharService).updateCharacter(ROOM_ID, CHARACTER_ID, request, account);
     }
 }

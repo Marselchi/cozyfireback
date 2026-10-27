@@ -192,12 +192,10 @@ class RoomIT extends BaseIntegrationTest {
             newRoomOwnedBy(stranger, "Other Room"); // stranger has an account, but in a different room
             authenticateAs(stranger);
 
-            // CurrentAccountResolver throws AccessDeniedException, which (as of today) is
-            // not mapped to 403 by GlobalExceptionHandler and falls through to the generic
-            // handler -> 500. This test pins current behaviour; adjust when a dedicated
-            // security exception mapping is added.
+            // CurrentAccountResolver throws AccessDeniedException, which GlobalExceptionHandler
+            // maps to 403.
             mockMvc.perform(get("/api/v1/rooms/{roomId}/context", room.getId()))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -355,6 +353,29 @@ class RoomIT extends BaseIntegrationTest {
         }
 
         @Test
+        @DisplayName("should return 403 when caller is not the room creator")
+        void importLore_nonCreatorForbidden() throws Exception {
+            Profile dm = newProfile("dm");
+            Room room = newRoomOwnedBy(dm, "Import Room");
+            Profile player = newProfile("player");
+            newAccount(player, room, "Player");
+            authenticateAs(player);
+
+            var file = new MockMultipartFile("file", "lore.md", "text/markdown",
+                    "# Header".getBytes(StandardCharsets.UTF_8));
+
+            mockMvc.perform(multipart("/api/v1/rooms/{roomId}/lore/import", room.getId())
+                            .file(file)
+                            .param("filetype", "md")
+                            .param("autolink", "true")
+                            .param("roomReset", "false")
+                            .param("replaceOnConflict", "true"))
+                    .andExpect(status().isForbidden());
+
+            verify(loreImportService, never()).importMdFile(anyLong(), any(), any(), any());
+        }
+
+        @Test
         @DisplayName("should reject unsupported filetype")
         void importLore_unsupportedFiletype() throws Exception {
             Profile dm = newProfile("dm");
@@ -386,8 +407,7 @@ class RoomIT extends BaseIntegrationTest {
             // LoreExportRequest is a record bound via constructor — all filter params are required
             mockMvc.perform(get("/api/v1/rooms/{roomId}/export", room.getId())
                             .param("saveTags", "true")
-                            .param("dmOnly", "false")
-                            .param("saveSpoilers", "false"))
+                            .param("dmOnly", "false"))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_OCTET_STREAM))
                     .andExpect(content().bytes("ZIPDATA".getBytes(StandardCharsets.UTF_8)));

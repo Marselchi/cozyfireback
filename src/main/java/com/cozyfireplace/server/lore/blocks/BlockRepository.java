@@ -15,6 +15,8 @@ import java.util.Optional;
 public interface BlockRepository extends JpaRepository<Block, Long> {
     Page<Block> findByLoreId(Long loreId, Pageable pageable);
 
+    List<Block> findByLoreId(Long loreId);
+
     @EntityGraph(attributePaths = {"roles", "chanceConfig", "chanceConfig.skill"})
     List<Block> findAllByIdIn(Collection<Long> ids);
 
@@ -33,6 +35,22 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
 
     @Query("SELECT b FROM Block b LEFT JOIN FETCH b.chanceConfig LEFT JOIN FETCH b.roles WHERE b.id = :id")
     Optional<Block> findByIdWithChanceAndRoles(Long id);
+
+    // Комната блока выводится из его владельца (lore или character). Чужой blockId даёт
+    // пустой результат (404), а не бросок/правку блока из другой комнаты.
+    @Query("""
+        SELECT b FROM Block b
+        LEFT JOIN b.lore l
+        LEFT JOIN l.account la
+        LEFT JOIN b.character c
+        LEFT JOIN c.account ca
+        LEFT JOIN FETCH b.chanceConfig
+        LEFT JOIN FETCH b.roles
+        WHERE b.id = :id
+          AND coalesce(la.room.id, ca.room.id) = :roomId
+    """)
+    Optional<Block> findByIdWithChanceAndRolesInRoom(@Param("id") Long id,
+                                                    @Param("roomId") Long roomId);
 
     @Query("""
                 SELECT b FROM Block b

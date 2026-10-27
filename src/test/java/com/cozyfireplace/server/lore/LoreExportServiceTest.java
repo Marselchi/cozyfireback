@@ -46,6 +46,8 @@ class LoreExportServiceTest {
     private LoreRepository loreRepository;
     @Mock
     private RoomRepository roomRepository;
+    @Mock
+    private com.cozyfireplace.server.lore.blocks.BlockService blockService;
 
     @InjectMocks
     private LoreExportService exportService;
@@ -53,6 +55,7 @@ class LoreExportServiceTest {
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(exportService, "appDomain", "https://cozyfireplace.ru");
+        lenient().when(blockService.expandBlocks(any(), any())).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ================= helpers =================
@@ -102,7 +105,7 @@ class LoreExportServiceTest {
     }
 
     private static LoreExportRequest filters(boolean saveTags, boolean dmOnly) {
-        return new LoreExportRequest(saveTags, dmOnly, true);
+        return new LoreExportRequest(saveTags, dmOnly);
     }
 
     // ================= error paths =================
@@ -136,6 +139,25 @@ class LoreExportServiceTest {
             assertEquals(List.of("The Broken Compass.md"), List.copyOf(entries.keySet()));
             // an empty separator line is always emitted between front-matter and body
             assertEquals("\nIt spins.", entries.get("The Broken Compass.md"));
+        }
+
+        @Test
+        @DisplayName("expands restricted blocks using blockService")
+        void blocksExpanded() throws IOException {
+            Account author = account(7);
+            Lore l = lore(1L, "Secrets", "Public text {restrictedBlock id=\"5\"}", author);
+            when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room(author)));
+            when(loreRepository.findAllByRoomId(ROOM_ID)).thenReturn(List.of(l));
+            when(loreRepository.findTagsByLoreIds(List.of(1L))).thenReturn(List.of());
+            when(blockService.expandBlocks("Public text {restrictedBlock id=\"5\"}", author))
+                    .thenReturn("Public text ::: restrictedBlock {\"id\":\"5\"}\nSecret\n:::");
+
+            Map<String, String> entries = unzip(
+                    exportService.exportLore(ROOM_ID, filters(false, false), author));
+
+            assertEquals("\nPublic text ::: restrictedBlock {\"id\":\"5\"}\nSecret\n:::",
+                    entries.get("Secrets.md"));
+            verify(blockService).expandBlocks("Public text {restrictedBlock id=\"5\"}", author);
         }
 
         @Test

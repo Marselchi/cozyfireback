@@ -164,6 +164,17 @@ public interface LoreRepository extends JpaRepository<Lore, Long> {
     Optional<LoreSummaryRow> findSummaryByIdAndRoomId(@Param("roomId") Long roomId,
                                                       @Param("loreId") Long loreId);
 
+    // Сущность lore строго в пределах комнаты: чужой loreId даёт пустой результат (404),
+    // а не тихую запись/удаление в чужой комнате.
+    @Query("""
+        select l from Lore l
+        join l.account a
+        join a.room r
+        where r.id = :roomId and l.id = :loreId
+    """)
+    Optional<Lore> findByRoomIdAndId(@Param("roomId") Long roomId,
+                                     @Param("loreId") Long loreId);
+
     // ====== 3) Batch rows for roles/tags ======
 
     interface LoreRoleRow {

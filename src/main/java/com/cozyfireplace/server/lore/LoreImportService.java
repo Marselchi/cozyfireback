@@ -1,8 +1,13 @@
 package com.cozyfireplace.server.lore;
 
 import com.cozyfireplace.server.accounts.Account;
+import com.cozyfireplace.server.lore.blocks.Block;
+import com.cozyfireplace.server.lore.blocks.BlockRepository;
+import com.cozyfireplace.server.lore.blocks.dto.AddedBlockRequest;
+import com.cozyfireplace.server.lore.blocks.dto.BlockChangesRequest;
 import com.cozyfireplace.server.lore.dto.LoreRequest;
 import com.cozyfireplace.server.roles.Role;
+import com.cozyfireplace.server.roles.RoleRepository;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.dto.LoreImportRequest;
@@ -14,6 +19,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.*;
 import java.nio.charset.Charset;
@@ -23,6 +30,7 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
@@ -34,9 +42,19 @@ public class LoreImportService {
 
     private static final Pattern WIKI_LINK = Pattern.compile("\\[\\[([^\\]|#]+)(?:#([^\\]|]*))?\\|([^\\]]*)\\]\\]");
 
+    private static final Pattern RESTRICTED_BLOCK_PATTERN = Pattern.compile(
+            "(?s):::\\s*restrictedBlock(?:[ \\t]+(\\{[^\\r\\n]*}))?[ \\t]*[\\r\\n]+" +
+                    "(.*?)" +
+                    "[\\r\\n]+:::[ \\t]*",
+            Pattern.MULTILINE
+    );
+
     private final LoreRepository loreRepository;
     private final RoomRepository roomRepository;
     private final LoreService loreService;
+    private final RoleRepository roleRepository;
+    private final BlockRepository blockRepository;
+    private final ObjectMapper objectMapper;
 
     @Value("${app.domain:http://localhost:3000}")
     private String appDomain;
@@ -56,7 +74,7 @@ public class LoreImportService {
         String content = readMarkdownContent(file);
         String title = extractTitleFromFileName(file.getOriginalFilename());
 
-        processAndSaveLore(roomId, title, content, account, filters.autolink(), Map.of());
+        processAndSaveLore(roomId, title, content, account, filters.autolink(), Map.of(), filters.replaceOnConflict());
     }
 
     /**
@@ -230,39 +248,65 @@ public class LoreImportService {
                                   boolean replaceOnConflict,
                                   Map<String, Long> reservedTitleToId) {
 
+        ParsedBlocks parsedBlocks = parseRestrictedBlocks(content, roomId);
+        String processedContent = parsedBlocks.content();
+        List<AddedBlockRequest> addedBlocks = parsedBlocks.addedBlocks();
+
         Optional<Lore> existingLore = loreRepository.findByTitleAndRoomId(title, roomId);
 
         if (existingLore.isPresent()) {
             if (replaceOnConflict) {
                 Lore lore = existingLore.get();
+
+                List<Block> existingBlocks = blockRepository.findByLoreId(lore.getId());
+                List<String> deletedBlockIds = existingBlocks.stream()
+                        .map(b -> b.getId().toString())
+                        .toList();
+
+                BlockChangesRequest blockChanges = null;
+                if (!addedBlocks.isEmpty() || !deletedBlockIds.isEmpty()) {
+                    blockChanges = BlockChangesRequest.builder()
+                            .addedBlocks(addedBlocks.isEmpty() ? null : addedBlocks)
+                            .deletedBlockIds(deletedBlockIds.isEmpty() ? null : deletedBlockIds)
+                            .build();
+                }
+
                 Set<Long> roleIds = lore.getRoles().stream()
                         .map(Role::getId)
-                        .collect(java.util.stream.Collectors.toSet());
+                        .collect(Collectors.toSet());
                 Set<Long> tagIds = lore.getTags().stream()
                         .map(Tag::getId)
-                        .collect(java.util.stream.Collectors.toSet());
+                        .collect(Collectors.toSet());
+
                 LoreRequest request = new LoreRequest(
                         title,
                         lore.getDescription(),
                         lore.getDate(),
-                        content,
-                        null,
+                        processedContent,
+                        blockChanges,
                         roleIds,
                         tagIds
                 );
-                loreService.updateLore(lore.getId(), request, account, roomId);
+                loreService.updateLore(roomId, lore.getId(), request, account);
                 return lore.getId();
             } else {
                 return existingLore.get().getId();
             }
         }
 
+        BlockChangesRequest blockChanges = null;
+        if (!addedBlocks.isEmpty()) {
+            blockChanges = BlockChangesRequest.builder()
+                    .addedBlocks(addedBlocks)
+                    .build();
+        }
+
         LoreRequest request = new LoreRequest(
                 title,
                 null,
                 null,
-                content,
-                null,
+                processedContent,
+                blockChanges,
                 Set.of(),
                 Set.of()
         );
@@ -275,7 +319,8 @@ public class LoreImportService {
                                     String content,
                                     Account account,
                                     boolean autolink,
-                                    Map<String, Long> reservedIds) {
+                                    Map<String, Long> reservedIds,
+                                    boolean replaceOnConflict) {
 
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new NotFoundException("Room", roomId));
@@ -290,7 +335,77 @@ public class LoreImportService {
                 room.getUrl()
         );
 
-        saveOrUpdateLore(roomId, title, processedContent, account, false, reservedIds);
+        saveOrUpdateLore(roomId, title, processedContent, account, replaceOnConflict, reservedIds);
+    }
+
+    private record ParsedBlocks(String content, List<AddedBlockRequest> addedBlocks) {
+    }
+
+    private ParsedBlocks parseRestrictedBlocks(String content, Long roomId) {
+        if (content == null || content.isEmpty()) {
+            return new ParsedBlocks(content, List.of());
+        }
+
+        Set<Long> validRoleIdsInRoom = roleRepository.findByRoomId(roomId).stream()
+                .map(Role::getId)
+                .collect(Collectors.toSet());
+
+        List<AddedBlockRequest> addedBlocks = new ArrayList<>();
+        Matcher matcher = RESTRICTED_BLOCK_PATTERN.matcher(content);
+        StringBuilder sb = new StringBuilder();
+
+        while (matcher.find()) {
+            String metadataJson = matcher.group(1);
+            String blockBody = matcher.group(2);
+
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            if (metadataJson != null && !metadataJson.isBlank()) {
+                try {
+                    metadata = objectMapper.readValue(metadataJson, new TypeReference<Map<String, Object>>() {});
+                } catch (Exception e) {
+                    log.warn("Failed to parse restrictedBlock metadata JSON: {}", metadataJson, e);
+                }
+            }
+
+            if (metadata.containsKey("roles")) {
+                Object rawRoles = metadata.get("roles");
+                if (rawRoles instanceof Collection<?> rawCol) {
+                    List<String> validRoles = rawCol.stream()
+                            .map(Object::toString)
+                            .filter(idStr -> {
+                                try {
+                                    return validRoleIdsInRoom.contains(Long.parseLong(idStr));
+                                } catch (NumberFormatException e) {
+                                    return false;
+                                }
+                            })
+                            .toList();
+                    metadata.put("roles", validRoles);
+                } else {
+                    metadata.put("roles", List.of());
+                }
+            } else {
+                metadata.put("roles", List.of());
+            }
+
+            if (!metadata.containsKey("spoilerType")) {
+                metadata.put("spoilerType", metadata.containsKey("chance") ? "chance" : "normal");
+            }
+
+            String localId = UUID.randomUUID().toString();
+            AddedBlockRequest addedBlock = AddedBlockRequest.builder()
+                    .localId(localId)
+                    .type("restrictedBlock")
+                    .content(blockBody)
+                    .metadata(metadata)
+                    .build();
+            addedBlocks.add(addedBlock);
+
+            matcher.appendReplacement(sb, Matcher.quoteReplacement("{restrictedBlock localId=\"" + localId + "\"}"));
+        }
+        matcher.appendTail(sb);
+
+        return new ParsedBlocks(sb.toString(), addedBlocks);
     }
 
     @Transactional

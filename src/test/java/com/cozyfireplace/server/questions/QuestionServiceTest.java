@@ -19,7 +19,9 @@ import com.cozyfireplace.server.questions.dto.QuestionMapper;
 import com.cozyfireplace.server.questions.dto.QuestionResponse;
 import com.cozyfireplace.server.questions.dto.QuestionUpdateRequest;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -47,14 +49,16 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
  * Pure Mockito unit tests for {@link QuestionService}.
  * <p>
- * All nine collaborators are mocked. The tests concentrate on the service's own logic:
- * the ordered lore / character / room lookups on create, the entity construction (category
- * narrowing, default unanswered flag), the question-detail thread reconstruction and the
+ * All collaborators are mocked. The tests concentrate on the service's own logic:
+ * the ordered room-scoped lore / character / room lookups on create, the entity construction (category
+ * narrowing, default unanswered flag), the room-scoped mutation guards (author or room creator),
+ * the question-detail thread reconstruction and the
  * contradictory-filter normalisation in {@code getQuestions}. MapStruct mapping and JPA
  * projection behaviour are stubbed, not exercised.
  */
@@ -84,6 +88,8 @@ class QuestionServiceTest {
     @Mock
     private RoomRepository roomRepository;
     @Mock
+    private RoomSecurityService roomSecurityService;
+    @Mock
     private AnswerRepository answerRepository;
     @Mock
     private AnswerMapper answerMapper;
@@ -110,9 +116,9 @@ class QuestionServiceTest {
     class Create {
 
         @Test
-        @DisplayName("throws NotFound when the referenced lore is missing")
+        @DisplayName("throws NotFound when the referenced lore is missing from the room")
         void loreNotFound() {
-            when(loreRepository.findById(LORE_ID)).thenReturn(Optional.empty());
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.empty());
             QuestionCreateRequest request = new QuestionCreateRequest("t", "b", null, LORE_ID, null);
 
             assertThatThrownBy(() -> service.createQuestion(request, mock(Account.class), ROOM_ID))
@@ -120,9 +126,9 @@ class QuestionServiceTest {
         }
 
         @Test
-        @DisplayName("throws NotFound when the referenced character is missing")
+        @DisplayName("throws NotFound when the referenced character is missing from the room")
         void characterNotFound() {
-            when(characterRepository.findById(CHARACTER_ID)).thenReturn(Optional.empty());
+            when(characterRepository.findByRoomIdAndId(ROOM_ID, CHARACTER_ID)).thenReturn(Optional.empty());
             QuestionCreateRequest request = new QuestionCreateRequest("t", "b", null, null, CHARACTER_ID);
 
             assertThatThrownBy(() -> service.createQuestion(request, mock(Account.class), ROOM_ID))
@@ -146,8 +152,8 @@ class QuestionServiceTest {
             Account account = account();
             Lore lore = Lore.builder().id(LORE_ID).build();
             Character character = Character.builder().id(CHARACTER_ID).build();
-            when(loreRepository.findById(LORE_ID)).thenReturn(Optional.of(lore));
-            when(characterRepository.findById(CHARACTER_ID)).thenReturn(Optional.of(character));
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
+            when(characterRepository.findByRoomIdAndId(ROOM_ID, CHARACTER_ID)).thenReturn(Optional.of(character));
             stubRoom();
             Question saved = Question.builder().id(QUESTION_ID).build();
             when(questionRepository.save(any(Question.class))).thenReturn(saved);
@@ -175,29 +181,63 @@ class QuestionServiceTest {
     class Update {
 
         @Test
-        @DisplayName("throws NotFound when the question is missing")
+        @DisplayName("throws NotFound when the question lives in another room")
         void notFound() {
-            when(questionRepository.findById(QUESTION_ID)).thenReturn(Optional.empty());
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() ->
-                    service.updateQuestion(QUESTION_ID, new QuestionUpdateRequest("t", "b", 1L)))
+                    service.updateQuestion(ROOM_ID, QUESTION_ID, new QuestionUpdateRequest("t", "b", 1L),
+                            Account.builder().id(ACCOUNT_ID).build()))
                     .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("throws Forbidden when the caller is neither author nor creator")
+        void forbidden() {
+            Question question = Question.builder().id(QUESTION_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.of(question));
+
+            assertThatThrownBy(() ->
+                    service.updateQuestion(ROOM_ID, QUESTION_ID, new QuestionUpdateRequest("t", "b", 1L),
+                            Account.builder().id(ACCOUNT_ID).build()))
+                    .isInstanceOf(ForbiddenException.class);
+            verify(questionRepository, never()).save(any());
         }
 
         @Test
         @DisplayName("applies the DTO onto the entity, saves and maps")
-        void success() {
-            Question question = Question.builder().id(QUESTION_ID).build();
-            when(questionRepository.findById(QUESTION_ID)).thenReturn(Optional.of(question));
+        void authorSuccess() {
+            Question question = Question.builder().id(QUESTION_ID)
+                    .author(Account.builder().id(ACCOUNT_ID).build()).build();
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.of(question));
             when(questionRepository.save(question)).thenReturn(question);
             QuestionResponse response = mock(QuestionResponse.class);
             when(questionMapper.toQuestionResponse(question)).thenReturn(response);
             QuestionUpdateRequest request = new QuestionUpdateRequest("t2", "b2", 3L);
 
-            QuestionResponse result = service.updateQuestion(QUESTION_ID, request);
+            QuestionResponse result = service.updateQuestion(ROOM_ID, QUESTION_ID, request,
+                    Account.builder().id(ACCOUNT_ID).build());
 
             verify(questionMapper).updateQuestionFromDto(request, question);
             assertThat(result).isSameAs(response);
+        }
+
+        @Test
+        @DisplayName("the room creator may edit somebody else's question")
+        void creatorSuccess() {
+            Question question = Question.builder().id(QUESTION_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            Account creator = Account.builder().id(ACCOUNT_ID).build();
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.of(question));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+            when(questionRepository.save(question)).thenReturn(question);
+            when(questionMapper.toQuestionResponse(question)).thenReturn(mock(QuestionResponse.class));
+
+            service.updateQuestion(ROOM_ID, QUESTION_ID, new QuestionUpdateRequest("t2", "b2", 3L), creator);
+
+            verify(questionRepository).save(question);
         }
     }
 
@@ -206,22 +246,51 @@ class QuestionServiceTest {
     class Delete {
 
         @Test
-        @DisplayName("throws NotFound when nothing exists")
+        @DisplayName("throws NotFound when the question lives in another room")
         void notFound() {
-            when(questionRepository.existsById(QUESTION_ID)).thenReturn(false);
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.deleteQuestion(QUESTION_ID)).isInstanceOf(NotFoundException.class);
-            verify(questionRepository, never()).deleteById(QUESTION_ID);
+            assertThatThrownBy(() -> service.deleteQuestion(ROOM_ID, QUESTION_ID,
+                    Account.builder().id(ACCOUNT_ID).build())).isInstanceOf(NotFoundException.class);
+            verify(questionRepository, never()).delete(any());
         }
 
         @Test
-        @DisplayName("deletes when present")
-        void deletes() {
-            when(questionRepository.existsById(QUESTION_ID)).thenReturn(true);
+        @DisplayName("throws Forbidden when the caller is neither author nor creator")
+        void forbidden() {
+            Question question = Question.builder().id(QUESTION_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.of(question));
 
-            service.deleteQuestion(QUESTION_ID);
+            assertThatThrownBy(() -> service.deleteQuestion(ROOM_ID, QUESTION_ID,
+                    Account.builder().id(ACCOUNT_ID).build())).isInstanceOf(ForbiddenException.class);
+            verify(questionRepository, never()).delete(any());
+        }
 
-            verify(questionRepository).deleteById(QUESTION_ID);
+        @Test
+        @DisplayName("the author deletes their own question")
+        void authorDeletes() {
+            Question question = Question.builder().id(QUESTION_ID)
+                    .author(Account.builder().id(ACCOUNT_ID).build()).build();
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.of(question));
+
+            service.deleteQuestion(ROOM_ID, QUESTION_ID, Account.builder().id(ACCOUNT_ID).build());
+
+            verify(questionRepository).delete(question);
+        }
+
+        @Test
+        @DisplayName("the room creator deletes a question of another account")
+        void creatorDeletes() {
+            Question question = Question.builder().id(QUESTION_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            Account creator = Account.builder().id(ACCOUNT_ID).build();
+            when(questionRepository.findByRoomIdAndId(ROOM_ID, QUESTION_ID)).thenReturn(Optional.of(question));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+
+            service.deleteQuestion(ROOM_ID, QUESTION_ID, creator);
+
+            verify(questionRepository).delete(question);
         }
     }
 
@@ -232,9 +301,9 @@ class QuestionServiceTest {
         @Test
         @DisplayName("throws NotFound when the question is missing")
         void notFound() {
-            when(questionRepository.findByIdWithAnswersAndAuthor(QUESTION_ID)).thenReturn(Optional.empty());
+            when(questionRepository.findByIdWithAnswersAndAuthor(QUESTION_ID, ROOM_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.getQuestionWithReplies(QUESTION_ID))
+            assertThatThrownBy(() -> service.getQuestionWithReplies(ROOM_ID, QUESTION_ID))
                     .isInstanceOf(NotFoundException.class);
         }
 
@@ -242,11 +311,11 @@ class QuestionServiceTest {
         @DisplayName("maps the fetched question")
         void maps() {
             Question question = Question.builder().id(QUESTION_ID).build();
-            when(questionRepository.findByIdWithAnswersAndAuthor(QUESTION_ID)).thenReturn(Optional.of(question));
+            when(questionRepository.findByIdWithAnswersAndAuthor(QUESTION_ID, ROOM_ID)).thenReturn(Optional.of(question));
             QuestionResponse response = mock(QuestionResponse.class);
             when(questionMapper.toQuestionResponse(question)).thenReturn(response);
 
-            assertThat(service.getQuestionWithReplies(QUESTION_ID)).isSameAs(response);
+            assertThat(service.getQuestionWithReplies(ROOM_ID, QUESTION_ID)).isSameAs(response);
         }
     }
 
@@ -257,9 +326,9 @@ class QuestionServiceTest {
         @Test
         @DisplayName("throws NotFound when the question is missing")
         void notFound() {
-            when(questionRepository.findByIdWithAuthor(QUESTION_ID)).thenReturn(Optional.empty());
+            when(questionRepository.findByIdWithAuthor(QUESTION_ID, ROOM_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.getQuestionById(QUESTION_ID, null))
+            assertThatThrownBy(() -> service.getQuestionById(ROOM_ID, QUESTION_ID, null))
                     .isInstanceOf(NotFoundException.class);
         }
 
@@ -267,7 +336,7 @@ class QuestionServiceTest {
         @DisplayName("without an answer focus returns the root answers and an empty path")
         void withoutAnswer() {
             Question question = Question.builder().id(QUESTION_ID).build();
-            when(questionRepository.findByIdWithAuthor(QUESTION_ID)).thenReturn(Optional.of(question));
+            when(questionRepository.findByIdWithAuthor(QUESTION_ID, ROOM_ID)).thenReturn(Optional.of(question));
             AnswerWithReplyCount wc = mock(AnswerWithReplyCount.class);
             when(answerRepository.findQuestionAnswersWithReplyCount(QUESTION_ID)).thenReturn(List.of(wc));
             AnswerWithRepliesResponse root =
@@ -276,7 +345,7 @@ class QuestionServiceTest {
             QuestionResponse qr = mock(QuestionResponse.class);
             when(questionMapper.toQuestionResponse(question)).thenReturn(qr);
 
-            QuestionDetailResponse result = service.getQuestionById(QUESTION_ID, null);
+            QuestionDetailResponse result = service.getQuestionById(ROOM_ID, QUESTION_ID, null);
 
             assertThat(result.question()).isSameAs(qr);
             assertThat(result.answers()).containsExactly(root);
@@ -287,7 +356,7 @@ class QuestionServiceTest {
         @DisplayName("with an answer focus stitches the leaf into its root and reports the path")
         void withAnswer() {
             Question question = Question.builder().id(QUESTION_ID).build();
-            when(questionRepository.findByIdWithAuthor(QUESTION_ID)).thenReturn(Optional.of(question));
+            when(questionRepository.findByIdWithAuthor(QUESTION_ID, ROOM_ID)).thenReturn(Optional.of(question));
             QuestionResponse qr = mock(QuestionResponse.class);
             when(questionMapper.toQuestionResponse(question)).thenReturn(qr);
 
@@ -302,7 +371,7 @@ class QuestionServiceTest {
             when(answerRepository.findAnswerPathDetailed(ANSWER_ID))
                     .thenReturn(new ArrayList<>(List.of(leaf, root)));
 
-            QuestionDetailResponse result = service.getQuestionById(QUESTION_ID, ANSWER_ID);
+            QuestionDetailResponse result = service.getQuestionById(ROOM_ID, QUESTION_ID, ANSWER_ID);
 
             assertThat(result.pathToAnswer()).containsExactly(1L);
             assertThat(result.answers()).hasSize(1);

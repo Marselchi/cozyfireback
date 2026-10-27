@@ -1,6 +1,5 @@
 package com.cozyfireplace.server.tags;
 
-import com.cozyfireplace.server.lore.Lore;
 import com.cozyfireplace.server.rooms.Room;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -8,6 +7,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 public interface TagRepository extends JpaRepository<Tag,Long> {
 
@@ -28,4 +28,10 @@ public interface TagRepository extends JpaRepository<Tag,Long> {
     boolean existsByNameAndRoom(String name, Room room);
 
     List<Tag> findByRoomId(Long roomId);
+
+    // Тег ищется строго внутри комнаты: чужой tagId отвечает пустым результатом (404),
+    // а не изменением/удалением тега из другой комнаты.
+    Optional<Tag> findByIdAndRoomId(Long id, Long roomId);
+
+    List<Tag> findByIdInAndRoomId(Collection<Long> ids, Long roomId);
 }

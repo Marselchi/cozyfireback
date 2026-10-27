@@ -69,16 +69,16 @@ class InvitationControllerTest {
     }
 
     @Nested
-    @DisplayName("DELETE /{invitationId}")
+    @DisplayName("DELETE /{roomId}/{invitationId}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by id")
+        @DisplayName("returns 204 and deletes inside the room from the path")
         void returnsNoContent() {
-            ResponseEntity<Void> response = controller.deleteInvitation(INVITATION_ID);
+            ResponseEntity<Void> response = controller.deleteInvitation(ROOM_ID, INVITATION_ID);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(invitationService).deleteInvitation(INVITATION_ID);
+            verify(invitationService).deleteInvitation(ROOM_ID, INVITATION_ID);
         }
     }
 

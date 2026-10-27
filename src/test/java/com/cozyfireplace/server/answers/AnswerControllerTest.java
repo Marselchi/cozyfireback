@@ -62,17 +62,18 @@ class AnswerControllerTest {
     }
 
     @Nested
-    @DisplayName("PUT /{id}")
+    @DisplayName("PUT /{roomId}/{id}")
     class Update {
 
         @Test
         @DisplayName("returns 200 with the updated answer")
         void returnsOk() {
+            Account account = mock(Account.class);
             AnswerUpdateRequest request = new AnswerUpdateRequest("edited");
             AnswerResponse body = mock(AnswerResponse.class);
-            when(answerService.updateAnswer(ANSWER_ID, request)).thenReturn(body);
+            when(answerService.updateAnswer(ROOM_ID, ANSWER_ID, request, account)).thenReturn(body);
 
-            ResponseEntity<AnswerResponse> response = controller.updateAnswer(ANSWER_ID, request);
+            ResponseEntity<AnswerResponse> response = controller.updateAnswer(ROOM_ID, ANSWER_ID, request, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).isSameAs(body);
@@ -80,16 +81,18 @@ class AnswerControllerTest {
     }
 
     @Nested
-    @DisplayName("DELETE /{id}")
+    @DisplayName("DELETE /{roomId}/{id}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by id")
+        @DisplayName("returns 204 and deletes inside the requested room")
         void returnsNoContent() {
-            ResponseEntity<Void> response = controller.deleteAnswer(ANSWER_ID);
+            Account account = mock(Account.class);
+
+            ResponseEntity<Void> response = controller.deleteAnswer(ROOM_ID, ANSWER_ID, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(answerService).deleteAnswer(ANSWER_ID);
+            verify(answerService).deleteAnswer(ROOM_ID, ANSWER_ID, account);
         }
     }
 

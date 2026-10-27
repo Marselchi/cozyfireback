@@ -58,11 +58,11 @@ public class SessionController {
 
     @Operation(
             summary = "Update a session",
-            description = "Updates a session. Only the room creator may update sessions.",
+            description = "Updates a session in the room. Only the room creator may update sessions.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Updated"),
-                    @ApiResponse(responseCode = "403", description = "Forbidden", content = @Content),
-                    @ApiResponse(responseCode = "404", description = "Session not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage sessions", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Session not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -75,28 +75,30 @@ public class SessionController {
                     }
                     """))
     )
-    @PutMapping("/{sessionId}")
+    @PutMapping("/{roomId}/{sessionId}")
     public ResponseEntity<SessionResponse> update(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the session", required = true, example = "3") @PathVariable Long sessionId,
             @Valid @RequestBody SessionRequest request
     ) {
-        return ResponseEntity.ok(sessionService.updateSession(sessionId, request));
+        return ResponseEntity.ok(sessionService.updateSession(roomId, sessionId, request));
     }
 
     @Operation(
             summary = "Delete a session",
-            description = "Deletes a session. Only the room creator may delete sessions.",
+            description = "Deletes a session in the room. Only the room creator may delete sessions.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Deleted"),
-                    @ApiResponse(responseCode = "403", description = "Forbidden", content = @Content),
-                    @ApiResponse(responseCode = "404", description = "Session not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage sessions", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Session not found in this room", content = @Content)
             }
     )
-    @DeleteMapping("/{sessionId}")
+    @DeleteMapping("/{roomId}/{sessionId}")
     public ResponseEntity<Void> delete(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the session", required = true, example = "3") @PathVariable Long sessionId
     ) {
-        sessionService.deleteSession(sessionId);
+        sessionService.deleteSession(roomId, sessionId);
         return ResponseEntity.noContent().build();
     }
 
@@ -161,19 +163,18 @@ public class SessionController {
             description = "Accepts (accepted=true) or declines (accepted=false) an invitation to a session.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Updated"),
-                    @ApiResponse(responseCode = "404", description = "Session not found", content = @Content),
-                    @ApiResponse(responseCode = "403", description = "Forbidden", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Session not found in this room", content = @Content),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: account is not invited to this session", content = @Content)
             }
     )
     @PostMapping("/{roomId}/{sessionId}/acknowledge")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> acknowledge(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the session", required = true, example = "3") @PathVariable Long sessionId,
             @Parameter(description = "Whether the invitation is accepted", required = true, example = "true") @RequestParam boolean accepted,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        sessionService.acknowledgeSession(sessionId, account, accepted);
+        sessionService.acknowledgeSession(roomId, sessionId, account, accepted);
         return ResponseEntity.noContent().build();
     }
 }

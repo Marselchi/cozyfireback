@@ -13,6 +13,7 @@ import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
 import com.cozyfireplace.server.tags.TagService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -173,8 +174,8 @@ class LoreServiceTest {
             Optional<RoomTextResponse> roomOpt = Optional.of(roomResponse());
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(roomOpt);
             when(loreMapper.toEntity(any(LoreRequest.class), eq(account))).thenReturn(lore);
-            when(roleService.resolveRoles(List.of(2L))).thenReturn(Set.of(r2));
-            when(tagService.resolveTags(List.of(3L))).thenReturn(Set.of());
+            when(roleService.resolveRoles(List.of(2L), ROOM_ID)).thenReturn(Set.of(r2));
+            when(tagService.resolveTags(List.of(3L), ROOM_ID)).thenReturn(Set.of());
             when(roomSecurityService.isCreator(account)).thenReturn(true);
             stubSaveAssignsId();
 
@@ -207,8 +208,8 @@ class LoreServiceTest {
             Optional<RoomTextResponse> roomOpt = Optional.of(roomResponse());
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(roomOpt);
             when(loreMapper.toEntity(any(LoreRequest.class), eq(account))).thenReturn(lore);
-            when(roleService.resolveRoles(anyList())).thenReturn(Set.of());
-            when(tagService.resolveTags(anyList())).thenReturn(Set.of());
+            when(roleService.resolveRoles(anyList(), eq(ROOM_ID))).thenReturn(Set.of());
+            when(tagService.resolveTags(anyList(), eq(ROOM_ID))).thenReturn(Set.of());
             stubSaveAssignsId();
             when(blockService.processBlockChanges(changes, lore)).thenReturn("{restrictedBlock id=\"5\"}");
 
@@ -227,13 +228,13 @@ class LoreServiceTest {
             Optional<RoomTextResponse> roomOpt = Optional.of(roomResponse());
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(roomOpt);
             when(loreMapper.toEntity(any(LoreRequest.class), eq(account))).thenReturn(Lore.builder().build());
-            when(roleService.resolveRoles(List.of())).thenReturn(Set.of());
-            when(tagService.resolveTags(List.of())).thenReturn(Set.of());
+            when(roleService.resolveRoles(List.of(), ROOM_ID)).thenReturn(Set.of());
+            when(tagService.resolveTags(List.of(), ROOM_ID)).thenReturn(Set.of());
             stubSaveAssignsId();
 
             assertNotNull(loreService.createLore(ROOM_ID, account, req));
-            verify(roleService).resolveRoles(List.of());
-            verify(tagService).resolveTags(List.of());
+            verify(roleService).resolveRoles(List.of(), ROOM_ID);
+            verify(tagService).resolveTags(List.of(), ROOM_ID);
         }
 
         @Test
@@ -243,8 +244,8 @@ class LoreServiceTest {
             Optional<RoomTextResponse> roomOpt = Optional.of(roomResponse());
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(roomOpt);
             when(loreMapper.toEntity(any(LoreRequest.class), eq(account))).thenReturn(Lore.builder().build());
-            when(roleService.resolveRoles(anyList())).thenReturn(Set.of());
-            when(tagService.resolveTags(anyList())).thenReturn(Set.of());
+            when(roleService.resolveRoles(anyList(), eq(ROOM_ID))).thenReturn(Set.of());
+            when(tagService.resolveTags(anyList(), eq(ROOM_ID))).thenReturn(Set.of());
             when(roomSecurityService.isCreator(account)).thenReturn(false);
             stubSaveAssignsId();
 
@@ -275,15 +276,15 @@ class LoreServiceTest {
         @DisplayName("updates roles/tags/entity fields, saves, resets views cache and publishes an UPDATE event")
         void success() {
             Account account = accountWithRoles();
-            Lore lore = Lore.builder().id(LORE_ID).content("old").build();
+            Lore lore = Lore.builder().id(LORE_ID).account(account).content("old").build();
             LoreRequest req = request();
-            when(loreRepository.findById(LORE_ID)).thenReturn(Optional.of(lore));
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
             Optional<RoomTextResponse> roomOpt = Optional.of(roomResponse());
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(roomOpt);
-            when(roleService.updateRolesLore(lore, req.roleIds())).thenReturn(lore);
-            when(tagService.updateTagsLore(lore, req.tagIds())).thenReturn(lore);
+            when(roleService.updateRolesLore(lore, req.roleIds(), ROOM_ID)).thenReturn(lore);
+            when(tagService.updateTagsLore(lore, req.tagIds(), ROOM_ID)).thenReturn(lore);
 
-            loreService.updateLore(LORE_ID, req, account, ROOM_ID);
+            loreService.updateLore(ROOM_ID, LORE_ID, req, account);
 
             verify(loreMapper).updateEntity(req, lore);
             verify(loreRepository).save(lore);
@@ -302,37 +303,75 @@ class LoreServiceTest {
         @DisplayName("applies block changes to the content before saving")
         void withBlockChanges() {
             Account account = accountWithRoles();
-            Lore lore = Lore.builder().id(LORE_ID).content("old").build();
+            Lore lore = Lore.builder().id(LORE_ID).account(account).content("old").build();
             BlockChangesRequest changes = new BlockChangesRequest();
             LoreRequest req = request(changes);
-            when(loreRepository.findById(LORE_ID)).thenReturn(Optional.of(lore));
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
             Optional<RoomTextResponse> roomOpt = Optional.of(roomResponse());
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(roomOpt);
-            when(roleService.updateRolesLore(eq(lore), any())).thenReturn(lore);
-            when(tagService.updateTagsLore(eq(lore), any())).thenReturn(lore);
+            when(roleService.updateRolesLore(eq(lore), any(), eq(ROOM_ID))).thenReturn(lore);
+            when(tagService.updateTagsLore(eq(lore), any(), eq(ROOM_ID))).thenReturn(lore);
             when(blockService.processBlockChanges(changes, lore)).thenReturn("new content");
 
-            loreService.updateLore(LORE_ID, req, account, ROOM_ID);
+            loreService.updateLore(ROOM_ID, LORE_ID, req, account);
 
             assertEquals("new content", lore.getContent());
             verify(loreRepository).save(lore);
         }
 
         @Test
-        @DisplayName("throws NotFoundException when the lore does not exist")
+        @DisplayName("throws NotFoundException when the lore is not in this room")
         void loreNotFound() {
-            when(loreRepository.findById(LORE_ID)).thenReturn(Optional.empty());
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.empty());
             assertThrows(NotFoundException.class,
-                    () -> loreService.updateLore(LORE_ID, request(), accountWithRoles(), ROOM_ID));
+                    () -> loreService.updateLore(ROOM_ID, LORE_ID, request(), accountWithRoles()));
+            verifyNoInteractions(roomSecurityService);
         }
 
         @Test
         @DisplayName("throws NotFoundException when the room does not exist")
         void roomNotFound() {
-            when(loreRepository.findById(LORE_ID)).thenReturn(Optional.of(Lore.builder().build()));
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(Lore.builder().build()));
             when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(Optional.empty());
             assertThrows(NotFoundException.class,
-                    () -> loreService.updateLore(LORE_ID, request(), accountWithRoles(), ROOM_ID));
+                    () -> loreService.updateLore(ROOM_ID, LORE_ID, request(), accountWithRoles()));
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when caller is not author or room creator")
+        void forbiddenWhenNotAuthorOrCreator() {
+            Account account = accountWithRoles();
+            Account otherAccount = mock(Account.class);
+            when(otherAccount.getId()).thenReturn(999L);
+            Lore lore = Lore.builder().id(LORE_ID).account(otherAccount).content("old").build();
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
+            RoomTextResponse roomResp = roomResponse();
+            when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(Optional.of(roomResp));
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class,
+                    () -> loreService.updateLore(ROOM_ID, LORE_ID, request(), account));
+            verify(loreRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("room creator who is not the author may update the lore")
+        void creatorNotAuthor() {
+            Account creator = accountWithRoles();
+            Account otherAccount = mock(Account.class);
+            when(otherAccount.getId()).thenReturn(999L);
+            Lore lore = Lore.builder().id(LORE_ID).account(otherAccount).content("old").build();
+            LoreRequest req = request();
+            RoomTextResponse roomResp = roomResponse();
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
+            when(roomRepository.findRoomUrlById(ROOM_ID)).thenReturn(Optional.of(roomResp));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+            when(roleService.updateRolesLore(eq(lore), any(), eq(ROOM_ID))).thenReturn(lore);
+            when(tagService.updateTagsLore(eq(lore), any(), eq(ROOM_ID))).thenReturn(lore);
+
+            loreService.updateLore(ROOM_ID, LORE_ID, req, creator);
+
+            verify(loreRepository).save(lore);
         }
     }
 
@@ -343,10 +382,54 @@ class LoreServiceTest {
     class DeleteLore {
 
         @Test
-        @DisplayName("delegates to the repository")
-        void success() {
-            loreService.deleteLore(LORE_ID);
+        @DisplayName("throws NotFoundException when the lore is not in this room (no silent no-op)")
+        void notFound() {
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.empty());
+
+            assertThrows(NotFoundException.class,
+                    () -> loreService.deleteLore(ROOM_ID, LORE_ID, accountWithRoles()));
+            verify(loreRepository, never()).deleteById(anyLong());
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("deletes with account when caller is author")
+        void withAccount_author() {
+            Account account = accountWithRoles();
+            Lore lore = Lore.builder().id(LORE_ID).account(account).build();
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
+
+            loreService.deleteLore(ROOM_ID, LORE_ID, account);
             verify(loreRepository).deleteById(LORE_ID);
+        }
+
+        @Test
+        @DisplayName("deletes when the caller is the room creator, not the author")
+        void withAccount_creator() {
+            Account creator = accountWithRoles();
+            Account otherAccount = mock(Account.class);
+            when(otherAccount.getId()).thenReturn(999L);
+            Lore lore = Lore.builder().id(LORE_ID).account(otherAccount).build();
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+
+            loreService.deleteLore(ROOM_ID, LORE_ID, creator);
+            verify(loreRepository).deleteById(LORE_ID);
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when caller is not author or creator")
+        void withAccount_forbidden() {
+            Account account = accountWithRoles();
+            Account otherAccount = mock(Account.class);
+            when(otherAccount.getId()).thenReturn(999L);
+            Lore lore = Lore.builder().id(LORE_ID).account(otherAccount).build();
+            when(loreRepository.findByRoomIdAndId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(lore));
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class,
+                    () -> loreService.deleteLore(ROOM_ID, LORE_ID, account));
+            verify(loreRepository, never()).deleteById(anyLong());
         }
     }
 
@@ -558,6 +641,21 @@ class LoreServiceTest {
             when(loreRepository.findSummaryByIdAndRoomId(ROOM_ID, LORE_ID)).thenReturn(Optional.empty());
 
             assertThrows(NotFoundException.class,
+                    () -> loreService.getLoreForEdit(ROOM_ID, LORE_ID, account));
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when caller is not author or room creator")
+        void forbiddenNotAuthorOrCreator() {
+            Account account = accountWithRoles(role(11));
+            LoreSummaryRow summary = mock(LoreSummaryRow.class);
+            when(summary.getAccountId()).thenReturn(999L);
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+            when(loreRepository.existsVisibleLore(eq(ROOM_ID), eq(LORE_ID), eq(false), eq(true), any(long[].class)))
+                    .thenReturn(true);
+            when(loreRepository.findSummaryByIdAndRoomId(ROOM_ID, LORE_ID)).thenReturn(Optional.of(summary));
+
+            assertThrows(ForbiddenException.class,
                     () -> loreService.getLoreForEdit(ROOM_ID, LORE_ID, account));
         }
     }

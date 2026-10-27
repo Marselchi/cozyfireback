@@ -18,6 +18,7 @@ import org.springframework.http.MediaType;
 
 import java.util.HashSet;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -40,15 +41,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p><b>Documented status map</b> (consistent across the whole IT suite):
  * <ul>
  *   <li>anonymous request → 403 (every block endpoint is {@code authenticated()});</li>
- *   <li>an unknown block id on {@code getBlock} / {@code getBlockWrapped} / {@code getBlockAccess}
- *       / {@code roll} raises a bare {@code jakarta.persistence.EntityNotFoundException} which
- *       {@code GlobalExceptionHandler} does not map → <b>500</b> (pinned);</li>
+ *   <li>an unknown block id on the <em>reads</em> ({@code getBlock} / {@code getBlockWrapped} /
+ *       {@code getBlockAccess}) still raises a bare {@code jakarta.persistence.EntityNotFoundException}
+ *       which {@code GlobalExceptionHandler} does not map → <b>500</b> (pinned);</li>
+ *   <li>an unknown block id on the <em>mutations</em> ({@code roll} / {@code chance}) is looked up
+ *       with the room-scoped {@code findByIdWithChanceAndRolesInRoom} and answers
+ *       {@code NotFoundException} → <b>404</b>; the same query makes another room's block id a 404
+ *       too, so the API never confirms it exists elsewhere;</li>
  *   <li>{@code BlockMapper.toDetailResponse} dereferences {@code block.getLore()}, so reading the
  *       <em>detail</em> of a <b>character-owned</b> block (whose {@code lore} is {@code null}) NPEs
  *       → 500 (pinned); the list summary and access endpoints handle it fine;</li>
  *   <li>an invalid {@code type} query param raises a plain {@code IllegalArgumentException} → 500
  *       (pinned);</li>
- *   <li>{@code roll} on a non-chance block throws {@code IllegalStateException} → 500 (pinned).</li>
+ *   <li>{@code roll} on a non-chance block throws {@code IllegalStateException} → 500 (pinned);</li>
+ *   <li>{@code chance} and the {@code access} reset / grant / deny endpoints are creator-gated
+ *       ({@code RoomSecurityService#isCreator(roomId)}) → a member who is not the creator gets 403,
+ *       and a profile without an account in the room also gets 403 (mapped
+ *       {@code AccessDeniedException} from the resolver).</li>
  * </ul>
  */
 @DisplayName("BlockIT — /api/v1/blocks")
@@ -343,40 +352,85 @@ class BlockIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("unknown block id → 500 (unmapped EntityNotFoundException)")
-        void roll_unknown_returns500_currentBehaviour() throws Exception {
+        @DisplayName("unknown block id → 404 (roll looks the block up inside the path room)")
+        void roll_unknown_returns404() throws Exception {
             authenticateAs(creatorProfile);
             mockMvc.perform(post("/api/v1/blocks/{roomId}/{blockId}/roll", room.getId(), 9_999_999L))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isNotFound());
         }
     }
 
     @Nested
-    @DisplayName("PATCH /api/v1/blocks/{blockId}/chance")
-    class ChanceConfigTests {
+    @DisplayName("POST /api/v1/blocks/{roomId}/access/{recordId}/{action}")
+    class AccessMutationTests {
 
         @Test
-        @DisplayName("unknown block id → 500 (unmapped EntityNotFoundException)")
-        void chance_unknownBlock_returns500_currentBehaviour() throws Exception {
+        @DisplayName("unknown access record id → 404 (record resolved inside the path room)")
+        void reset_unknownRecord_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(patch("/api/v1/blocks/{blockId}/chance", 9_999_999L)
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(json(new ChanceConfigRequest("perception", 15))))
-                    .andExpect(status().isInternalServerError());
+            mockMvc.perform(post("/api/v1/blocks/{roomId}/access/{recordId}/reset", room.getId(), 9_999_999L))
+                    .andExpect(status().isNotFound());
         }
 
         @Test
-        @DisplayName("existing block but unknown skill id → 500 (unmapped EntityNotFoundException)")
-        void chance_unknownSkill_returns500_currentBehaviour() throws Exception {
+        @DisplayName("grant refuses an unknown record id → 404")
+        void grant_unknownRecord_returns404() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(post("/api/v1/blocks/{roomId}/access/{recordId}/grant", room.getId(), 9_999_999L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("deny refuses an unknown record id → 404")
+        void deny_unknownRecord_returns404() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(post("/api/v1/blocks/{roomId}/access/{recordId}/deny", room.getId(), 9_999_999L))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("PATCH /api/v1/blocks/{roomId}/{blockId}/chance")
+    class ChanceConfigTests {
+
+        @Test
+        @DisplayName("unknown block id → 404 (block resolved inside the path room)")
+        void chance_unknownBlock_returns404() throws Exception {
+            authenticateAs(creatorProfile);
+            mockMvc.perform(patch("/api/v1/blocks/{roomId}/{blockId}/chance", room.getId(), 9_999_999L)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(new ChanceConfigRequest("perception", 15))))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("existing block but unknown skill id → 404 (skill lookup refuses missing keys)")
+        void chance_unknownSkill_returns404() throws Exception {
             Lore lore = newLore("Skill Lore");
             Block blk = loreBlock(lore, "will gain a chance config");
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(patch("/api/v1/blocks/{blockId}/chance", blk.getId())
+            mockMvc.perform(patch("/api/v1/blocks/{roomId}/{blockId}/chance", room.getId(), blk.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new ChanceConfigRequest("no-such-skill", 15))))
-                    // Pinned: skillRepository.findById(missing) throws EntityNotFoundException → 500.
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isNotFound());
+
+            assertThat(blockRepository.findById(blk.getId()).orElseThrow().getChanceConfig()).isNull();
+        }
+
+        @Test
+        @DisplayName("member who is not the room creator → 403 (chance config is creator-only)")
+        void chance_byMember_returns403() throws Exception {
+            Lore lore = newLore("Locked Lore");
+            Block blk = loreBlock(lore, "not yours to tune");
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(patch("/api/v1/blocks/{roomId}/{blockId}/chance", room.getId(), blk.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(new ChanceConfigRequest("perception", 15))))
+                    .andExpect(status().isForbidden());
+
+            assertThat(blockRepository.findById(blk.getId()).orElseThrow().getChanceConfig()).isNull();
         }
     }
 

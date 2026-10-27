@@ -26,10 +26,11 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link SessionController}.
  * <p>
  * The controller is a thin HTTP facade over {@link SessionService}; each test locks the
- * status code, the body passthrough and which path variables reach the service. Note the
- * acknowledge / current-month endpoints accept a room id but ignore it (the source marks
- * them {@code @SuppressWarnings}), and the range endpoint forwards the parsed
- * instants unchanged.
+ * status code, the body passthrough and which path variables reach the service. Every
+ * session mutation forwards the {@code roomId} from the path so the service can resolve
+ * the session inside that room; only the current-month read leaves the resolved account
+ * unused (the source marks it {@code @SuppressWarnings}), and the range endpoint forwards
+ * the parsed instants unchanged.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("SessionController")
@@ -64,7 +65,7 @@ class SessionControllerTest {
     }
 
     @Nested
-    @DisplayName("PUT /{sessionId}")
+    @DisplayName("PUT /{roomId}/{sessionId}")
     class Update {
 
         @Test
@@ -72,9 +73,9 @@ class SessionControllerTest {
         void returnsBody() {
             SessionRequest request = mock(SessionRequest.class);
             SessionResponse body = mock(SessionResponse.class);
-            when(sessionService.updateSession(SESSION_ID, request)).thenReturn(body);
+            when(sessionService.updateSession(ROOM_ID, SESSION_ID, request)).thenReturn(body);
 
-            ResponseEntity<SessionResponse> response = controller.update(SESSION_ID, request);
+            ResponseEntity<SessionResponse> response = controller.update(ROOM_ID, SESSION_ID, request);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(response.getBody()).isSameAs(body);
@@ -82,16 +83,16 @@ class SessionControllerTest {
     }
 
     @Nested
-    @DisplayName("DELETE /{sessionId}")
+    @DisplayName("DELETE /{roomId}/{sessionId}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by id")
+        @DisplayName("returns 204 and deletes inside the requested room")
         void returnsNoContent() {
-            ResponseEntity<Void> response = controller.delete(SESSION_ID);
+            ResponseEntity<Void> response = controller.delete(ROOM_ID, SESSION_ID);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(sessionService).deleteSession(SESSION_ID);
+            verify(sessionService).deleteSession(ROOM_ID, SESSION_ID);
         }
     }
 
@@ -173,14 +174,14 @@ class SessionControllerTest {
     class Acknowledge {
 
         @Test
-        @DisplayName("returns 204 and acknowledges by session id (room id ignored)")
+        @DisplayName("returns 204 and acknowledges the session inside the room")
         void returnsNoContent() {
             Account account = mock(Account.class);
 
             ResponseEntity<Void> response = controller.acknowledge(ROOM_ID, SESSION_ID, true, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(sessionService).acknowledgeSession(SESSION_ID, account, true);
+            verify(sessionService).acknowledgeSession(ROOM_ID, SESSION_ID, account, true);
             verifyNoMoreInteractions(sessionService);
         }
     }

@@ -6,6 +6,8 @@ import com.cozyfireplace.server.invitations.dto.InvitationRequest;
 import com.cozyfireplace.server.invitations.dto.InvitationRespone;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ public class InvitationService {
     private final InvitationRepository invitationRepository;
     private final AccountService accountService;
     private final RoomRepository roomRepository;
+    private final RoomSecurityService roomSecurityService;
 
     public static String generateRandomString(int length) {
         StringBuilder sb = new StringBuilder(length);
@@ -32,7 +35,13 @@ public class InvitationService {
     }
 
     public InvitationRespone createInvitation(Long roomId) {
-        Room room = roomRepository.getReferenceById(roomId);
+        // getReferenceById лениво не проверял комнату: несуществующий roomId давал 500
+        // от FK-нарушения на вставке вместо 404.
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new NotFoundException("Room", roomId));
+
+        assertCreator(roomId);
+
         Invitation invitation = Invitation.builder()
                 .code(generateRandomString(8))
                 .room(room)
@@ -41,8 +50,13 @@ public class InvitationService {
         return new InvitationRespone(saved.getId(), saved.getCode());
     }
 
-    public void deleteInvitation(Long id) {
-        invitationRepository.deleteById(id);
+    public void deleteInvitation(Long roomId, Long invitationId) {
+        Invitation invitation = invitationRepository.findByRoomIdAndId(roomId, invitationId)
+                .orElseThrow(() -> new NotFoundException("Invitation", invitationId));
+
+        assertCreator(roomId);
+
+        invitationRepository.delete(invitation);
     }
 
     @Transactional
@@ -53,8 +67,16 @@ public class InvitationService {
     }
 
     public List<InvitationRespone> getAllInvitations(Long roomId) {
+        assertCreator(roomId);
+
         List<Invitation> invitationList = invitationRepository.findAllByRoomId(roomId);
 
         return invitationList.stream().map((i) -> new InvitationRespone(i.getId(), i.getCode())).toList();
+    }
+
+    private void assertCreator(Long roomId) {
+        if (!roomSecurityService.isCreator(roomId)) {
+            throw new ForbiddenException("Управление приглашениями", "только создатель комнаты может управлять приглашениями");
+        }
     }
 }

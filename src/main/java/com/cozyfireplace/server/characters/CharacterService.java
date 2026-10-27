@@ -9,10 +9,10 @@ import com.cozyfireplace.server.notifications.event.OperationType;
 import com.cozyfireplace.server.questions.QuestionRepository;
 import com.cozyfireplace.server.roles.Role;
 import com.cozyfireplace.server.roles.RoleService;
-import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,7 +50,7 @@ public class CharacterService {
         boolean isCreator = roomSecurityService.isCreator(account);
 
         character.setRoles(roleService.resolveRoles(
-                request.roleIds() == null ? List.of() : List.copyOf(request.roleIds())
+                request.roleIds() == null ? List.of() : List.copyOf(request.roleIds()), roomId
         ));
         Character saved = characterRepository.save(character);
 
@@ -78,14 +78,20 @@ public class CharacterService {
     }
 
     @Transactional
-    public void updateCharacter(Long characterId, CharacterRequest request,Account account, Long roomId) {
-        Character character = characterRepository.findById(characterId)
+    public void updateCharacter(Long roomId, Long characterId, CharacterRequest request, Account account) {
+        Character character = characterRepository.findByRoomIdAndId(roomId, characterId)
                 .orElseThrow(() -> new NotFoundException("Character", characterId));
 
         RoomTextResponse room = roomRepository.findRoomUrlById(roomId)
                 .orElseThrow(() -> new NotFoundException("Room", roomId));
 
-        character = roleService.updateRolesCharacter(character, request.roleIds());
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = character.getAccount() != null && Objects.equals(character.getAccount().getId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can update character");
+        }
+
+        character = roleService.updateRolesCharacter(character, request.roleIds(), roomId);
         characterMapper.updateEntity(request, character);
 
         if (request.blockChanges() != null) {
@@ -110,8 +116,23 @@ public class CharacterService {
     }
 
     @Transactional
-    public void deleteCharacter(Long characterId) {
+    public void deleteCharacter(Long roomId, Long characterId, Account account) {
+        Character character = characterRepository.findByRoomIdAndId(roomId, characterId)
+                .orElseThrow(() -> new NotFoundException("Character", characterId));
+        checkCharacterEditPermission(character, account);
         characterRepository.deleteById(characterId);
+    }
+
+    /**
+     * Комната уже проверена запросом ({@code findByRoomIdAndId}), а аккаунт гарантирован
+     * {@code @CurrentAccount}, поэтому остаётся проверить только авторство либо права создателя комнаты.
+     */
+    private void checkCharacterEditPermission(Character character, Account account) {
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = character.getAccount() != null && Objects.equals(character.getAccount().getId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can delete character");
+        }
     }
 
     // ====== LIST (pagination + filters) ======
@@ -177,6 +198,12 @@ public class CharacterService {
 
         CharacterSummaryRow s = characterRepository.findSummaryByIdAndRoomId(roomId, characterId)
                 .orElseThrow(() -> new NotFoundException("Character", characterId));
+
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = Objects.equals(s.getAccountId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can edit character");
+        }
 
         List<Long> ids = List.of(s.getId());
 

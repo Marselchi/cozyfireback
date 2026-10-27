@@ -45,12 +45,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <ul>
  *   <li>anonymous request → 403 (stateless chain, default {@code Http403ForbiddenEntryPoint});</li>
  *   <li>authenticated user without an account in the room ({@code @CurrentAccount} throws
- *       AccessDeniedException, unmapped by {@code GlobalExceptionHandler}) → 500 (pinned);</li>
+ *       AccessDeniedException, mapped by {@code GlobalExceptionHandler}) → 403;</li>
  *   <li>bean-validation violations → 400 with {@code $.validationErrors.<field>};</li>
  *   <li>{@code NotFoundException} (missing lore / unknown role id) → 404;</li>
- *   <li>a {@code @CurrentAccount}-based endpoint with an unknown {@code roomId} → 500, because the
- *       argument resolver fails to find an account in the missing room before the handler runs;</li>
- *   <li>{@code deleteLore} uses the lenient {@code repository.deleteById} → unknown id is 204.</li>
+ *   <li>a {@code @CurrentAccount}-based endpoint with an unknown {@code roomId} → 403: the
+ *       argument resolver cannot find an account in a room that does not exist, which is the
+ *       same "no account here" branch as a stranger;</li>
+ *   <li>mutations resolve the lore inside the path room first ({@code findByRoomIdAndId}) →
+ *       an unknown id, or an id belonging to another room, is a 404, never a silent no-op.</li>
  * </ul>
  *
  * <p>Role-restricted visibility is read through native queries, so fixtures that created the
@@ -152,16 +154,18 @@ class LoreIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("unknown room id → 500 (@CurrentAccount cannot resolve an account in a " +
-                "nonexistent room; the resolver throws before the handler's own 404 is reached)")
-        void create_unknownRoom_returns500_currentBehaviour() throws Exception {
+        @DisplayName("unknown room id → 403 (@CurrentAccount cannot resolve an account in a " +
+                "nonexistent room; the resolver refuses before the handler runs)")
+        void create_unknownRoom_returns403() throws Exception {
             authenticateAs(creatorProfile);
 
             mockMvc.perform(post("/api/v1/lore/{roomId}", 9_999_999L)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(loreBody("Anywhere", "content", Set.of(), Set.of())))
-                    // Pinned: resolver AccessDeniedException is unmapped → 500 (would become 404 if resolution were deferred).
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
+
+            assertThat(loreRepository.findAll().stream()
+                    .filter(l -> "Anywhere".equals(l.getTitle()))).isEmpty();
         }
 
         @Test
@@ -177,16 +181,18 @@ class LoreIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("authenticated stranger without an account in the room → 500 " +
-                "(AccessDeniedException from @CurrentAccount is not mapped by GlobalExceptionHandler)")
-        void create_nonMember_returns500_currentBehaviour() throws Exception {
+        @DisplayName("authenticated stranger without an account in the room → 403 " +
+                "(AccessDeniedException from @CurrentAccount is mapped by GlobalExceptionHandler)")
+        void create_nonMember_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
 
             mockMvc.perform(post("/api/v1/lore/{roomId}", room.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(loreBody("Intruder", "content", Set.of(), Set.of())))
-                    // Pinned on purpose: becomes 403 once AccessDeniedException gets an @ExceptionHandler.
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
+
+            assertThat(loreRepository.findAll().stream()
+                    .filter(l -> "Intruder".equals(l.getTitle()))).isEmpty();
         }
     }
 
@@ -276,11 +282,11 @@ class LoreIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("unknown room id → 500 (@CurrentAccount resolution precedes the handler)")
-        void list_unknownRoom_returns500_currentBehaviour() throws Exception {
+        @DisplayName("unknown room id → 403 (@CurrentAccount resolution precedes the handler)")
+        void list_unknownRoom_returns403() throws Exception {
             authenticateAs(creatorProfile);
             mockMvc.perform(get("/api/v1/lore/{roomId}/all", 9_999_999L))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -328,6 +334,30 @@ class LoreIT extends BaseIntegrationTest {
             authenticateAs(creatorProfile);
             mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", room.getId(), 9_999_999L))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("member editing someone else's lore → 403 Forbidden")
+        void edit_memberEditingOthersLore_returns403() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Creator Lore", "content", Set.of(), Set.of()));
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", room.getId(), id))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("member editing their own lore → 200 OK")
+        void edit_memberEditingOwnLore_returns200() throws Exception {
+            long id = createViaApi(memberProfile, loreBody("Member Lore", "content", Set.of(), Set.of()));
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/lore/{roomId}/{loreId}/edit", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.title").value("Member Lore"));
         }
     }
 
@@ -461,6 +491,22 @@ class LoreIT extends BaseIntegrationTest {
         }
 
         @Test
+        @DisplayName("a lore from another room → 404 and stays untouched (no cross-room edit)")
+        void update_otherRoomLore_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Mine", "content", Set.of(), Set.of()));
+            // memberProfile gets an account in the second room, so @CurrentAccount resolves there
+            Room otherRoom = newRoomOwnedBy(memberProfile, "Other Room");
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", otherRoom.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Stolen", "stolen content", Set.of(), Set.of())))
+                    .andExpect(status().isNotFound());
+
+            assertThat(loreRepository.findById(id).orElseThrow().getTitle()).isEqualTo("Mine");
+        }
+
+        @Test
         @DisplayName("blank content fails bean validation → 400 with validationErrors.content")
         void update_blankContent_returns400() throws Exception {
             long id = createViaApi(creatorProfile, loreBody("Draft", "First", Set.of(), Set.of()));
@@ -472,10 +518,37 @@ class LoreIT extends BaseIntegrationTest {
                     .andExpect(status().isBadRequest())
                     .andExpect(jsonPath("$.validationErrors.content").exists());
         }
+
+        @Test
+        @DisplayName("member updating someone else's lore → 403 Forbidden")
+        void update_memberUpdatingOthersLore_returns403() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Creator Lore", "content", Set.of(), Set.of()));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", room.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Hacked", "content", Set.of(), Set.of())))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("member updating their own lore → 204 No Content")
+        void update_memberUpdatingOwnLore_returns204() throws Exception {
+            long id = createViaApi(memberProfile, loreBody("Member Lore", "content", Set.of(), Set.of()));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(put("/api/v1/lore/{roomId}/{loreId}", room.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(loreBody("Member Lore Updated", "new content", Set.of(), Set.of())))
+                    .andExpect(status().isNoContent());
+
+            Lore saved = loreRepository.findById(id).orElseThrow();
+            assertThat(saved.getTitle()).isEqualTo("Member Lore Updated");
+        }
     }
 
     @Nested
-    @DisplayName("DELETE /api/v1/lore/{loreId}")
+    @DisplayName("DELETE /api/v1/lore/{roomId}/{loreId}")
     class DeleteTests {
 
         @Test
@@ -484,19 +557,68 @@ class LoreIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, loreBody("Doomed", "content", Set.of(), Set.of()));
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/lore/{loreId}", id))
+            mockMvc.perform(delete("/api/v1/lore/{roomId}/{loreId}", room.getId(), id))
                     .andExpect(status().isNoContent());
 
             assertThat(loreRepository.findById(id)).isEmpty();
         }
 
         @Test
-        @DisplayName("unknown lore id → 204 (deleteById is lenient, no existence check in service)")
-        void delete_unknownId_isSilentlyIgnored() throws Exception {
+        @DisplayName("unknown lore id → 404 (the delete resolves the row inside the path room)")
+        void delete_unknownId_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/lore/{loreId}", 9_999_999L))
-                    // Pinned current behaviour: LoreService#deleteLore never verifies existence.
+            mockMvc.perform(delete("/api/v1/lore/{roomId}/{loreId}", room.getId(), 9_999_999L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a lore from another room → 404 and survives (no cross-room delete)")
+        void delete_otherRoomLore_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Keep me", "content", Set.of(), Set.of()));
+            // memberProfile gets an account in the second room, so @CurrentAccount resolves there
+            Room otherRoom = newRoomOwnedBy(memberProfile, "Other Room");
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/lore/{roomId}/{loreId}", otherRoom.getId(), id))
+                    .andExpect(status().isNotFound());
+
+            assertThat(loreRepository.findById(id)).isPresent();
+        }
+
+        @Test
+        @DisplayName("member deleting someone else's lore → 403 Forbidden")
+        void delete_memberDeletingOthersLore_returns403() throws Exception {
+            long id = createViaApi(creatorProfile, loreBody("Creator Lore", "content", Set.of(), Set.of()));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/lore/{roomId}/{loreId}", room.getId(), id))
+                    .andExpect(status().isForbidden());
+
+            assertThat(loreRepository.findById(id)).isPresent();
+        }
+
+        @Test
+        @DisplayName("member deleting their own lore → 204 No Content")
+        void delete_memberDeletingOwnLore_returns204() throws Exception {
+            long id = createViaApi(memberProfile, loreBody("Member Lore", "content", Set.of(), Set.of()));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/lore/{roomId}/{loreId}", room.getId(), id))
                     .andExpect(status().isNoContent());
+
+            assertThat(loreRepository.findById(id)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("room creator deleting member's lore → 204 No Content")
+        void delete_creatorDeletingMembersLore_returns204() throws Exception {
+            long id = createViaApi(memberProfile, loreBody("Member Lore", "content", Set.of(), Set.of()));
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(delete("/api/v1/lore/{roomId}/{loreId}", room.getId(), id))
+                    .andExpect(status().isNoContent());
+
+            assertThat(loreRepository.findById(id)).isEmpty();
         }
     }
 

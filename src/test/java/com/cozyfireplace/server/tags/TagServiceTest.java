@@ -3,11 +3,13 @@ package com.cozyfireplace.server.tags;
 import com.cozyfireplace.server.lore.Lore;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.tags.dto.TagCreateRequest;
 import com.cozyfireplace.server.tags.dto.TagMapper;
 import com.cozyfireplace.server.tags.dto.TagResponse;
 import com.cozyfireplace.server.tags.dto.TagUpdateRequest;
 import com.cozyfireplace.server.util.exception.AlreadyExistsException;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -34,12 +36,13 @@ import static org.mockito.Mockito.*;
 /**
  * Pure Mockito unit tests for {@link TagService}.
  * <p>
- * The repositories and the MapStruct mapper are mocked so the tests target the
- * service's own logic: room/duplicate checks, the update-and-save flow, and in
- * particular {@code resolveTagIdsByNames} where names are trimmed, blanks and
- * nulls dropped, the resolved set validated against missing names, and ids
- * returned. The {@code updateTagsLore}/{@code resolveTags} id-collection
- * validation (missing-tag detection) is covered too.
+ * The repositories, the room security gate and the MapStruct mapper are mocked so the tests
+ * target the service's own logic: room/duplicate checks, the creator-only permission gate,
+ * the room-scoped update-and-save flow, and in particular {@code resolveTagIdsByNames} where
+ * names are trimmed, blanks and nulls dropped, the resolved set validated against missing
+ * names, and ids returned. The {@code updateTagsLore}/{@code resolveTags} id-collection
+ * validation (missing-tag detection, including a tag from another room answering 404) is
+ * covered too.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TagService")
@@ -52,6 +55,8 @@ class TagServiceTest {
     private TagRepository tagRepository;
     @Mock
     private RoomRepository roomRepository;
+    @Mock
+    private RoomSecurityService roomSecurityService;
     @Mock
     private TagMapper tagMapper;
 
@@ -96,7 +101,20 @@ class TagServiceTest {
             assertThrows(NotFoundException.class,
                     () -> tagService.createTag(ROOM_ID, new TagCreateRequest("Locations")));
 
+            verifyNoInteractions(roomSecurityService);
             verify(tagRepository, never()).existsByNameAndRoom(anyString(), any());
+            verify(tagRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when the caller is not the room creator")
+        void notCreator() {
+            when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room()));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class,
+                    () -> tagService.createTag(ROOM_ID, new TagCreateRequest("Locations")));
+
             verify(tagRepository, never()).save(any());
         }
 
@@ -105,6 +123,7 @@ class TagServiceTest {
         void duplicateName() {
             Room room = room();
             when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(tagRepository.existsByNameAndRoom("Locations", room)).thenReturn(true);
 
             assertThrows(AlreadyExistsException.class,
@@ -118,6 +137,7 @@ class TagServiceTest {
         void validSaves() {
             Room room = room();
             when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
             when(tagRepository.existsByNameAndRoom("Locations", room)).thenReturn(false);
 
             tagService.createTag(ROOM_ID, new TagCreateRequest("Locations"));
@@ -136,13 +156,41 @@ class TagServiceTest {
     class UpdateTag {
 
         @Test
-        @DisplayName("throws NotFoundException when the tag does not exist")
+        @DisplayName("throws NotFoundException when the tag lives in another room")
         void tagNotFound() {
-            when(tagRepository.findById(TAG_ID)).thenReturn(Optional.empty());
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.empty());
 
             assertThrows(NotFoundException.class,
-                    () -> tagService.updateTag(TAG_ID, new TagUpdateRequest("Landmarks")));
+                    () -> tagService.updateTag(ROOM_ID, TAG_ID, new TagUpdateRequest("Landmarks")));
 
+            verifyNoInteractions(roomSecurityService);
+            verify(tagRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when the caller is not the room creator")
+        void notCreator() {
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.of(tag(TAG_ID, "Locations")));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class,
+                    () -> tagService.updateTag(ROOM_ID, TAG_ID, new TagUpdateRequest("Landmarks")));
+
+            verify(tagRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("throws AlreadyExistsException when the new name is taken in the room")
+        void duplicateName() {
+            Tag tag = tag(TAG_ID, "Locations");
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.of(tag));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+            when(tagRepository.existsByNameAndRoom("Landmarks", tag.getRoom())).thenReturn(true);
+
+            assertThrows(AlreadyExistsException.class,
+                    () -> tagService.updateTag(ROOM_ID, TAG_ID, new TagUpdateRequest("Landmarks")));
+
+            verify(tagMapper, never()).updateEntity(any(), any());
             verify(tagRepository, never()).save(any());
         }
 
@@ -151,9 +199,10 @@ class TagServiceTest {
         void validUpdatesAndSaves() {
             Tag tag = tag(TAG_ID, "Locations");
             TagUpdateRequest request = new TagUpdateRequest("Landmarks");
-            when(tagRepository.findById(TAG_ID)).thenReturn(Optional.of(tag));
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.of(tag));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
 
-            tagService.updateTag(TAG_ID, request);
+            tagService.updateTag(ROOM_ID, TAG_ID, request);
 
             verify(tagMapper).updateEntity(request, tag);
             verify(tagRepository).save(tag);
@@ -162,11 +211,44 @@ class TagServiceTest {
 
     // ================= deleteTag / getTag =================
 
-    @Test
-    @DisplayName("deleteTag delegates straight to the repository")
-    void deleteTag() {
-        tagService.deleteTag(TAG_ID);
-        verify(tagRepository).deleteById(TAG_ID);
+    @Nested
+    @DisplayName("deleteTag")
+    class DeleteTag {
+
+        @Test
+        @DisplayName("throws NotFoundException when the tag lives in another room")
+        void tagNotFound() {
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.empty());
+
+            assertThrows(NotFoundException.class, () -> tagService.deleteTag(ROOM_ID, TAG_ID));
+
+            verifyNoInteractions(roomSecurityService);
+            verify(tagRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when the caller is not the room creator")
+        void notCreator() {
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.of(tag(TAG_ID, "Locations")));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThrows(ForbiddenException.class, () -> tagService.deleteTag(ROOM_ID, TAG_ID));
+
+            verify(tagRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("deletes the loaded tag (no silent no-op on a foreign id)")
+        void deletes() {
+            Tag tag = tag(TAG_ID, "Locations");
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.of(tag));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+
+            tagService.deleteTag(ROOM_ID, TAG_ID);
+
+            verify(tagRepository).delete(tag);
+            verify(tagRepository, never()).deleteById(any());
+        }
     }
 
     @Nested
@@ -174,10 +256,10 @@ class TagServiceTest {
     class GetTag {
 
         @Test
-        @DisplayName("throws NotFoundException when the tag does not exist")
+        @DisplayName("throws NotFoundException when the tag lives in another room")
         void tagNotFound() {
-            when(tagRepository.findById(TAG_ID)).thenReturn(Optional.empty());
-            assertThrows(NotFoundException.class, () -> tagService.getTag(TAG_ID));
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.empty());
+            assertThrows(NotFoundException.class, () -> tagService.getTag(ROOM_ID, TAG_ID));
         }
 
         @Test
@@ -185,10 +267,10 @@ class TagServiceTest {
         void returnsMapped() {
             Tag tag = tag(TAG_ID, "Locations");
             TagResponse mapped = TagResponse.builder().id(TAG_ID).name(tag.getName()).build();
-            when(tagRepository.findById(TAG_ID)).thenReturn(Optional.of(tag));
+            when(tagRepository.findByIdAndRoomId(TAG_ID, ROOM_ID)).thenReturn(Optional.of(tag));
             when(tagMapper.toResponse(tag)).thenReturn(mapped);
 
-            assertThat(tagService.getTag(TAG_ID)).isSameAs(mapped);
+            assertThat(tagService.getTag(ROOM_ID, TAG_ID)).isSameAs(mapped);
         }
     }
 
@@ -296,9 +378,10 @@ class TagServiceTest {
         @DisplayName("throws NotFoundException when an id is missing")
         void missingIdThrows() {
             Lore lore = Lore.builder().tags(new HashSet<>()).build();
-            when(tagRepository.findAllById(Set.of(1L, 2L))).thenReturn(List.of(tag(1L, "a")));
+            when(tagRepository.findByIdInAndRoomId(anyCollection(), eq(ROOM_ID))).thenReturn(List.of(tag(1L, "a")));
 
-            assertThrows(NotFoundException.class, () -> tagService.updateTagsLore(lore, Set.of(1L, 2L)));
+            assertThrows(NotFoundException.class,
+                    () -> tagService.updateTagsLore(lore, Set.of(1L, 2L), ROOM_ID));
         }
 
         @Test
@@ -308,9 +391,9 @@ class TagServiceTest {
             Lore lore = Lore.builder().tags(new HashSet<>(Set.of(stale))).build();
             Tag a = tag(1L, "a");
             Tag b = tag(2L, "b");
-            when(tagRepository.findAllById(Set.of(1L, 2L))).thenReturn(List.of(a, b));
+            when(tagRepository.findByIdInAndRoomId(anyCollection(), eq(ROOM_ID))).thenReturn(List.of(a, b));
 
-            Lore result = tagService.updateTagsLore(lore, Set.of(1L, 2L));
+            Lore result = tagService.updateTagsLore(lore, Set.of(1L, 2L), ROOM_ID);
 
             assertThat(result).isSameAs(lore);
             assertThat(lore.getTags()).containsExactlyInAnyOrder(a, b);
@@ -326,17 +409,17 @@ class TagServiceTest {
         @Test
         @DisplayName("null or empty id list returns an empty set without touching the repository")
         void nullOrEmpty() {
-            assertThat(tagService.resolveTags(null)).isEmpty();
-            assertThat(tagService.resolveTags(List.of())).isEmpty();
+            assertThat(tagService.resolveTags(null, ROOM_ID)).isEmpty();
+            assertThat(tagService.resolveTags(List.of(), ROOM_ID)).isEmpty();
             verifyNoInteractions(tagRepository);
         }
 
         @Test
-        @DisplayName("throws NotFoundException when an id cannot be resolved")
+        @DisplayName("throws NotFoundException when an id cannot be resolved inside the room")
         void missingIdThrows() {
-            when(tagRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(tag(1L, "a")));
+            when(tagRepository.findByIdInAndRoomId(List.of(1L, 2L), ROOM_ID)).thenReturn(List.of(tag(1L, "a")));
 
-            assertThrows(NotFoundException.class, () -> tagService.resolveTags(List.of(1L, 2L)));
+            assertThrows(NotFoundException.class, () -> tagService.resolveTags(List.of(1L, 2L), ROOM_ID));
         }
 
         @Test
@@ -344,9 +427,9 @@ class TagServiceTest {
         void validReturnsSet() {
             Tag a = tag(1L, "a");
             Tag b = tag(2L, "b");
-            when(tagRepository.findAllById(List.of(1L, 2L))).thenReturn(List.of(a, b, a));
+            when(tagRepository.findByIdInAndRoomId(List.of(1L, 2L), ROOM_ID)).thenReturn(List.of(a, b, a));
 
-            Set<Tag> result = tagService.resolveTags(List.of(1L, 2L));
+            Set<Tag> result = tagService.resolveTags(List.of(1L, 2L), ROOM_ID);
 
             assertThat(result).containsExactlyInAnyOrder(a, b);
         }

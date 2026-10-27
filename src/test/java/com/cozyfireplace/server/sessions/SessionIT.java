@@ -33,8 +33,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p><b>Documented status map</b> (consistent across the whole IT suite):
  * <ul>
  *   <li>anonymous request → 403;</li>
- *   <li>create with a stranger (no account in the room) → 500 (resolver's AccessDeniedException
- *       is unmapped); create by a plain member → 403 (service's {@code ForbiddenException});</li>
+ *   <li>create with a stranger (no account in the room) → 403 (the resolver's AccessDeniedException
+ *       is mapped by {@code GlobalExceptionHandler}); create by a plain member → 403
+ *       (service's {@code ForbiddenException});</li>
  *   <li>{@code time == null} → 400 with {@code $.validationErrors.time} (bean-validation runs
  *       before the {@code @CurrentAccount} resolver);</li>
  *   <li>invite ids that belong to another room → 404;</li>
@@ -143,18 +144,18 @@ class SessionIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("stranger without an account in the room → 500 (unmapped AccessDeniedException)")
-        void create_byStranger_returns500_currentBehaviour() throws Exception {
+        @DisplayName("stranger without an account in the room → 403 (resolver AccessDeniedException)")
+        void create_byStranger_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
             mockMvc.perform(post("/api/v1/sessions/{roomId}", room.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new SessionRequest(Instant.now(), "X", Set.of()))))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 
     @Nested
-    @DisplayName("PUT /api/v1/sessions/{sessionId} — update")
+    @DisplayName("PUT /api/v1/sessions/{roomId}/{sessionId} — update")
     class UpdateTests {
 
         @Test
@@ -164,7 +165,7 @@ class SessionIT extends BaseIntegrationTest {
             Instant newTime = Instant.now().plusSeconds(172_800);
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(put("/api/v1/sessions/{sessionId}", id)
+            mockMvc.perform(put("/api/v1/sessions/{roomId}/{sessionId}", room.getId(), id)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new SessionRequest(newTime, "After", Set.of()))))
                     .andExpect(status().isOk())
@@ -179,7 +180,7 @@ class SessionIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, new SessionRequest(Instant.now(), "Locked", Set.of()));
 
             authenticateAs(memberProfile);
-            mockMvc.perform(put("/api/v1/sessions/{sessionId}", id)
+            mockMvc.perform(put("/api/v1/sessions/{roomId}/{sessionId}", room.getId(), id)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new SessionRequest(Instant.now(), "Hijack", Set.of()))))
                     .andExpect(status().isForbidden());
@@ -189,10 +190,25 @@ class SessionIT extends BaseIntegrationTest {
         @DisplayName("unknown session id → 404")
         void update_unknown_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(put("/api/v1/sessions/{sessionId}", 9_999_999L)
+            mockMvc.perform(put("/api/v1/sessions/{roomId}/{sessionId}", room.getId(), 9_999_999L)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(json(new SessionRequest(Instant.now(), "X", Set.of()))))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a session from another room → 404 (no cross-room edit)")
+        void update_otherRoomSession_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, new SessionRequest(Instant.now(), "Mine", Set.of()));
+            Room otherRoom = newRoom("Other Room");
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(put("/api/v1/sessions/{roomId}/{sessionId}", otherRoom.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(new SessionRequest(Instant.now(), "Stolen", Set.of()))))
+                    .andExpect(status().isNotFound());
+
+            assertThat(sessionRepository.findById(id).orElseThrow().getDescription()).isEqualTo("Mine");
         }
     }
 
@@ -257,7 +273,7 @@ class SessionIT extends BaseIntegrationTest {
     }
 
     @Nested
-    @DisplayName("DELETE /api/v1/sessions/{sessionId}")
+    @DisplayName("DELETE /api/v1/sessions/{roomId}/{sessionId}")
     class DeleteTests {
 
         @Test
@@ -266,7 +282,7 @@ class SessionIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, new SessionRequest(Instant.now(), "Doomed", Set.of()));
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/sessions/{sessionId}", id))
+            mockMvc.perform(delete("/api/v1/sessions/{roomId}/{sessionId}", room.getId(), id))
                     .andExpect(status().isNoContent());
 
             assertThat(sessionRepository.findById(id)).isEmpty();
@@ -278,16 +294,29 @@ class SessionIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, new SessionRequest(Instant.now(), "Locked", Set.of()));
 
             authenticateAs(memberProfile);
-            mockMvc.perform(delete("/api/v1/sessions/{sessionId}", id))
+            mockMvc.perform(delete("/api/v1/sessions/{roomId}/{sessionId}", room.getId(), id))
                     .andExpect(status().isForbidden());
         }
 
         @Test
-        @DisplayName("unknown session id → 404")
+        @DisplayName("unknown session id → 404 (no silent no-op)")
         void delete_unknown_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/sessions/{sessionId}", 9_999_999L))
+            mockMvc.perform(delete("/api/v1/sessions/{roomId}/{sessionId}", room.getId(), 9_999_999L))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a session from another room → 404 and stays in its own room")
+        void delete_otherRoomSession_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, new SessionRequest(Instant.now(), "Keep me", Set.of()));
+            Room otherRoom = newRoom("Other Room");
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(delete("/api/v1/sessions/{roomId}/{sessionId}", otherRoom.getId(), id))
+                    .andExpect(status().isNotFound());
+
+            assertThat(sessionRepository.findById(id)).isPresent();
         }
     }
 

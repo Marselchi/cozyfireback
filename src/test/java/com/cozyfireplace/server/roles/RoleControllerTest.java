@@ -24,8 +24,9 @@ import static org.mockito.Mockito.*;
  * <p>
  * The controller is a thin HTTP facade over {@link RoleService}; each test locks
  * the contract: the returned status code, the body passthrough and which path
- * variables actually reach the service (note the room id is accepted but ignored
- * by the role-scoped operations, mirroring the source's {@code @SuppressWarnings}).
+ * variables actually reach the service. Every role-scoped operation forwards both
+ * the room id and the role id, so a request cannot edit a role that belongs to
+ * another room.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("RoleController")
@@ -61,14 +62,14 @@ class RoleControllerTest {
     class Update {
 
         @Test
-        @DisplayName("returns 204 and updates by role id (room id is ignored)")
+        @DisplayName("returns 204 and updates the role inside the room from the path")
         void returnsNoContent() {
             RoleUpdateRequest request = new RoleUpdateRequest("Trusted Party Member");
 
             ResponseEntity<Void> response = controller.update(ROOM_ID, ROLE_ID, request);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(roleService).updateRole(ROLE_ID, request);
+            verify(roleService).updateRole(ROOM_ID, ROLE_ID, request);
             verifyNoMoreInteractions(roleService);
         }
     }
@@ -78,12 +79,12 @@ class RoleControllerTest {
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by role id (room id is ignored)")
+        @DisplayName("returns 204 and deletes the role inside the room from the path")
         void returnsNoContent() {
             ResponseEntity<Void> response = controller.delete(ROOM_ID, ROLE_ID);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(roleService).deleteRole(ROLE_ID);
+            verify(roleService).deleteRole(ROOM_ID, ROLE_ID);
         }
     }
 
@@ -92,10 +93,10 @@ class RoleControllerTest {
     class GetRole {
 
         @Test
-        @DisplayName("returns 200 with the role fetched by id")
+        @DisplayName("returns 200 with the role fetched from the room")
         void returnsBody() {
             RoleResponse body = new RoleResponse(ROLE_ID, "Role");
-            when(roleService.getRole(ROLE_ID)).thenReturn(body);
+            when(roleService.getRole(ROOM_ID, ROLE_ID)).thenReturn(body);
 
             ResponseEntity<RoleResponse> response = controller.getRole(ROOM_ID, ROLE_ID);
 

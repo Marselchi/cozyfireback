@@ -107,7 +107,7 @@ class LoreControllerTest {
             ResponseEntity<Void> response = controller.update(ROOM_ID, LORE_ID, request, account);
 
             assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
-            verify(loreService).updateLore(LORE_ID, request, account, ROOM_ID);
+            verify(loreService).updateLore(ROOM_ID, LORE_ID, request, account);
             verify(loreViewService).loreUpdated(LORE_ID);
         }
     }
@@ -115,16 +115,18 @@ class LoreControllerTest {
     // ================= delete =================
 
     @Nested
-    @DisplayName("DELETE /{loreId}")
+    @DisplayName("DELETE /{roomId}/{loreId}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and delegates the deletion by lore id")
+        @DisplayName("returns 204 and deletes the lore inside the room from the path")
         void deletes() {
-            ResponseEntity<Void> response = controller.delete(LORE_ID);
+            Account account = account();
+
+            ResponseEntity<Void> response = controller.deleteInRoom(ROOM_ID, LORE_ID, account);
 
             assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
-            verify(loreService).deleteLore(LORE_ID);
+            verify(loreService).deleteLore(ROOM_ID, LORE_ID, account);
         }
     }
 

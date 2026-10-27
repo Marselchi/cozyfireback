@@ -11,8 +11,10 @@ import com.cozyfireplace.server.roles.RoleRepository;
 import com.cozyfireplace.server.roles.RoleService;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.RoomService;
 import com.cozyfireplace.server.util.exception.AlreadyExistsException;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ public class AccountService {
     private final RoleRepository roleRepository;
     private final RoomService roomService;
     private final RoleService roleService;
+    private final RoomSecurityService roomSecurityService;
     private final AccountMapper accountMapper;
 
 
@@ -46,10 +49,9 @@ public class AccountService {
         accountRepository.save(account);
     }
 
-    public void deleteAccountRole(Long accountId, Long roleId) {
-        Account account = accountRepository.findById(accountId).orElseThrow(
-                () -> new NotFoundException("Account", accountId)
-        );
+    public void deleteAccountRole(Long roomId, Long accountId, Long roleId) {
+        Account account = findInRoom(roomId, accountId);
+        assertCreator(roomId);
 
         boolean wasRemoved = account.getRoles().removeIf(role -> role.getId().equals(roleId));
         if (!wasRemoved) {
@@ -57,12 +59,12 @@ public class AccountService {
         }
     }
 
-    public void addAccountRole(Long accountId, Long roleId) {
-        Account account = accountRepository.findById(accountId).orElseThrow(
-                () -> new NotFoundException("Account", accountId)
-        );
+    public void addAccountRole(Long roomId, Long accountId, Long roleId) {
+        Account account = findInRoom(roomId, accountId);
+        assertCreator(roomId);
 
-        Role role =  roleRepository.findById(roleId).orElseThrow(
+        // Роль берётся строго из той же комнаты, иначе аккаунту можно выдать роль чужой комнаты.
+        Role role = roleRepository.findByIdAndRoomId(roleId, roomId).orElseThrow(
                 () -> new NotFoundException("Role", roleId)
         );
         boolean added = account.getRoles().add(role);
@@ -77,9 +79,9 @@ public class AccountService {
 
     }
 
-    public void updateAccountRole(Long accountId, AccountUpdateRoleRequest request) {
-        Account account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new NotFoundException("Account", accountId));
+    public void updateAccountRole(Long roomId, Long accountId, AccountUpdateRoleRequest request) {
+        Account account = findInRoom(roomId, accountId);
+        assertCreator(roomId);
 
         Long oldRoleId = request.oldRoleId();
         Long newRoleId = request.newRoleId();
@@ -101,11 +103,26 @@ public class AccountService {
 
         account.getRoles().removeIf(role -> role.getId().equals(oldRoleId));
 
-        Role newRole = roleRepository.findById(newRoleId)
+        Role newRole = roleRepository.findByIdAndRoomId(newRoleId, roomId)
                 .orElseThrow(() -> new NotFoundException("Role", newRoleId));
 
         account.getRoles().add(newRole);
 
         accountRepository.save(account);
+    }
+
+    /**
+     * Аккаунт ищется строго внутри комнаты из пути: чужой accountId даёт 404,
+     * а не выдачу роли участнику другой комнаты.
+     */
+    private Account findInRoom(Long roomId, Long accountId) {
+        return accountRepository.findByIdAndRoomId(accountId, roomId)
+                .orElseThrow(() -> new NotFoundException("Account", accountId));
+    }
+
+    private void assertCreator(Long roomId) {
+        if (!roomSecurityService.isCreator(roomId)) {
+            throw new ForbiddenException("Назначение ролей", "только создатель комнаты может управлять ролями участников");
+        }
     }
 }

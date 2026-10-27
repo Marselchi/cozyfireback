@@ -23,8 +23,8 @@ import static org.mockito.Mockito.*;
  * <p>
  * The controller is a thin HTTP facade over {@link TagService}; each test fixes
  * the status code, the body passthrough and the arguments forwarded to the
- * service (the room id path variable is accepted but ignored by the tag-scoped
- * operations, mirroring the source's {@code @SuppressWarnings}).
+ * service. Every tag-scoped operation forwards both the room id and the tag id,
+ * so a request cannot reach into another room's tags.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TagController")
@@ -60,14 +60,14 @@ class TagControllerTest {
     class Update {
 
         @Test
-        @DisplayName("returns 204 and updates by tag id (room id is ignored)")
+        @DisplayName("returns 204 and updates the tag inside the room from the path")
         void returnsNoContent() {
             TagUpdateRequest request = new TagUpdateRequest("Landmarks");
 
             ResponseEntity<Void> response = controller.update(ROOM_ID, TAG_ID, request);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(tagService).updateTag(TAG_ID, request);
+            verify(tagService).updateTag(ROOM_ID, TAG_ID, request);
             verifyNoMoreInteractions(tagService);
         }
     }
@@ -77,12 +77,12 @@ class TagControllerTest {
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by tag id (room id is ignored)")
+        @DisplayName("returns 204 and deletes the tag inside the room from the path")
         void returnsNoContent() {
             ResponseEntity<Void> response = controller.delete(ROOM_ID, TAG_ID);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(tagService).deleteTag(TAG_ID);
+            verify(tagService).deleteTag(ROOM_ID, TAG_ID);
         }
     }
 
@@ -91,10 +91,10 @@ class TagControllerTest {
     class GetTag {
 
         @Test
-        @DisplayName("returns 200 with the tag fetched by id")
+        @DisplayName("returns 200 with the tag fetched from the room")
         void returnsBody() {
             TagResponse body = TagResponse.builder().id(TAG_ID).name("Locations").build();
-            when(tagService.getTag(TAG_ID)).thenReturn(body);
+            when(tagService.getTag(ROOM_ID, TAG_ID)).thenReturn(body);
 
             ResponseEntity<TagResponse> response = controller.getTag(ROOM_ID, TAG_ID);
 

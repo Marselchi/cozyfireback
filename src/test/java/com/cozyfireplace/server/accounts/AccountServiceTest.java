@@ -10,8 +10,10 @@ import com.cozyfireplace.server.roles.RoleRepository;
 import com.cozyfireplace.server.roles.RoleService;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.RoomService;
 import com.cozyfireplace.server.util.exception.AlreadyExistsException;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,7 +31,9 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -57,6 +61,8 @@ class AccountServiceTest {
     private RoleRepository roleRepository;
     @Mock
     private RoomService roomService;
+    @Mock
+    private RoomSecurityService roomSecurityService;
     @Mock
     private AccountMapper accountMapper;
 
@@ -110,10 +116,22 @@ class AccountServiceTest {
         @Test
         @DisplayName("throws NotFound when the account is unknown")
         void accountMissing() {
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.deleteAccountRole(ACCOUNT_ID, 5L))
+            assertThatThrownBy(() -> service.deleteAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
                     .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("throws Forbidden when the caller is not the room creator")
+        void notCreator() {
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID))
+                    .thenReturn(Optional.of(mock(Account.class)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.deleteAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
+                    .isInstanceOf(ForbiddenException.class);
         }
 
         @Test
@@ -123,9 +141,10 @@ class AccountServiceTest {
             when(role.getId()).thenReturn(5L);
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(new HashSet<>(Set.of(role)));
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
 
-            service.deleteAccountRole(ACCOUNT_ID, 5L);
+            service.deleteAccountRole(ROOM_ID, ACCOUNT_ID, 5L);
 
             assertThat(account.getRoles()).isEmpty();
         }
@@ -135,9 +154,10 @@ class AccountServiceTest {
         void roleMissing() {
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(new HashSet<>());
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
 
-            assertThatThrownBy(() -> service.deleteAccountRole(ACCOUNT_ID, 5L))
+            assertThatThrownBy(() -> service.deleteAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
                     .isInstanceOf(NotFoundException.class);
         }
     }
@@ -149,10 +169,22 @@ class AccountServiceTest {
         @Test
         @DisplayName("throws NotFound when the account is unknown")
         void accountMissing() {
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.addAccountRole(ACCOUNT_ID, 5L))
+            assertThatThrownBy(() -> service.addAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
                     .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roleRepository);
+        }
+
+        @Test
+        @DisplayName("throws Forbidden when the caller is not the room creator")
+        void notCreator() {
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID))
+                    .thenReturn(Optional.of(mock(Account.class)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.addAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
+                    .isInstanceOf(ForbiddenException.class);
             verifyNoInteractions(roleRepository);
         }
 
@@ -160,10 +192,11 @@ class AccountServiceTest {
         @DisplayName("throws NotFound when the role is unknown")
         void roleMissing() {
             Account account = mock(Account.class);
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-            when(roleRepository.findById(5L)).thenReturn(Optional.empty());
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+            when(roleRepository.findByIdAndRoomId(5L, ROOM_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.addAccountRole(ACCOUNT_ID, 5L))
+            assertThatThrownBy(() -> service.addAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
                     .isInstanceOf(NotFoundException.class);
         }
 
@@ -173,10 +206,11 @@ class AccountServiceTest {
             Role role = mock(Role.class);
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(new HashSet<>(Set.of(role)));
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-            when(roleRepository.findById(5L)).thenReturn(Optional.of(role));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+            when(roleRepository.findByIdAndRoomId(5L, ROOM_ID)).thenReturn(Optional.of(role));
 
-            assertThatThrownBy(() -> service.addAccountRole(ACCOUNT_ID, 5L))
+            assertThatThrownBy(() -> service.addAccountRole(ROOM_ID, ACCOUNT_ID, 5L))
                     .isInstanceOf(AlreadyExistsException.class);
         }
 
@@ -186,10 +220,11 @@ class AccountServiceTest {
             Role role = mock(Role.class);
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(new HashSet<>());
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-            when(roleRepository.findById(5L)).thenReturn(Optional.of(role));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+            when(roleRepository.findByIdAndRoomId(5L, ROOM_ID)).thenReturn(Optional.of(role));
 
-            service.addAccountRole(ACCOUNT_ID, 5L);
+            service.addAccountRole(ROOM_ID, ACCOUNT_ID, 5L);
 
             assertThat(account.getRoles()).containsExactly(role);
             verify(accountRepository).save(account);
@@ -221,10 +256,22 @@ class AccountServiceTest {
         @Test
         @DisplayName("throws NotFound when the account is unknown")
         void accountMissing() {
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.empty());
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.updateAccountRole(ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
+            assertThatThrownBy(() -> service.updateAccountRole(ROOM_ID, ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
                     .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("throws Forbidden when the caller is not the room creator")
+        void notCreator() {
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID))
+                    .thenReturn(Optional.of(mock(Account.class)));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.updateAccountRole(ROOM_ID, ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
+                    .isInstanceOf(ForbiddenException.class);
         }
 
         @Test
@@ -232,9 +279,10 @@ class AccountServiceTest {
         void lacksOldRole() {
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(new HashSet<>());
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
 
-            assertThatThrownBy(() -> service.updateAccountRole(ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
+            assertThatThrownBy(() -> service.updateAccountRole(ROOM_ID, ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
                     .isInstanceOf(NotFoundException.class);
         }
 
@@ -250,9 +298,10 @@ class AccountServiceTest {
             roles.add(newRole);
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(roles);
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
 
-            assertThatThrownBy(() -> service.updateAccountRole(ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
+            assertThatThrownBy(() -> service.updateAccountRole(ROOM_ID, ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
                     .isInstanceOf(AlreadyExistsException.class);
         }
 
@@ -266,13 +315,32 @@ class AccountServiceTest {
             roles.add(oldRole);
             Account account = mock(Account.class);
             when(account.getRoles()).thenReturn(roles);
-            when(accountRepository.findById(ACCOUNT_ID)).thenReturn(Optional.of(account));
-            when(roleRepository.findById(7L)).thenReturn(Optional.of(newRole));
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+            when(roleRepository.findByIdAndRoomId(7L, ROOM_ID)).thenReturn(Optional.of(newRole));
 
-            service.updateAccountRole(ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L));
+            service.updateAccountRole(ROOM_ID, ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L));
 
             assertThat(account.getRoles()).containsExactly(newRole);
             verify(accountRepository).save(account);
+        }
+
+        @Test
+        @DisplayName("throws NotFound when the new role lives in another room")
+        void newRoleOutsideRoom() {
+            Role oldRole = mock(Role.class);
+            when(oldRole.getId()).thenReturn(5L);
+            Set<Role> roles = new HashSet<>();
+            roles.add(oldRole);
+            Account account = mock(Account.class);
+            when(account.getRoles()).thenReturn(roles);
+            when(accountRepository.findByIdAndRoomId(ACCOUNT_ID, ROOM_ID)).thenReturn(Optional.of(account));
+            when(roomSecurityService.isCreator(ROOM_ID)).thenReturn(true);
+            when(roleRepository.findByIdAndRoomId(7L, ROOM_ID)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.updateAccountRole(ROOM_ID, ACCOUNT_ID, new AccountUpdateRoleRequest(5L, 7L)))
+                    .isInstanceOf(NotFoundException.class);
+            verify(accountRepository, never()).save(any());
         }
     }
 }

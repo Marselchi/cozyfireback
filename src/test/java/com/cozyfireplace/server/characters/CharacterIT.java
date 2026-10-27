@@ -61,11 +61,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <ul>
  *   <li>anonymous request → 403 (stateless chain, default {@code Http403ForbiddenEntryPoint});</li>
  *   <li>authenticated user without an account in the room ({@code @CurrentAccount} fails)
- *       → AccessDeniedException, which is not explicitly handled by the
- *       {@code GlobalExceptionHandler} → 500 (pinned here, would become 403 once mapped);</li>
- *   <li>bean-validation violations → 400 with {@code $.validationErrors.<field>};</li>
+ *       → {@code AccessDeniedException}, mapped by {@code GlobalExceptionHandler} → 403;</li>
+ *   <li>bean-validation violations → 400 with {@code $.validationErrors.&lt;field&gt;};</li>
  *   <li>{@code NotFoundException} (missing room/character/role) → 404.</li>
  * </ul>
+ *
+ * <p>Every mutation is resolved inside the path room first
+ * ({@code findByRoomIdAndId} → 404) and only then checks authorship / room-creator
+ * (→ 403), so a character id belonging to another room reads as "not found" — the
+ * API never confirms it exists elsewhere.</p>
  */
 @DisplayName("CharacterIT — /api/v1/characters")
 class CharacterIT extends BaseIntegrationTest {
@@ -173,16 +177,18 @@ class CharacterIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("authenticated user without an account in the room → 500 " +
-                "(AccessDeniedException from @CurrentAccount is not mapped by GlobalExceptionHandler)")
-        void create_nonMember_returns500_currentBehaviour() throws Exception {
+        @DisplayName("authenticated user without an account in the room → 403 " +
+                "(AccessDeniedException from @CurrentAccount is mapped by GlobalExceptionHandler)")
+        void create_nonMember_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
 
             mockMvc.perform(post("/api/v1/characters/{roomId}", room.getId())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(characterBody("Intruder", "alive", "[]")))
-                    // Pinned on purpose: becomes 403 once AccessDeniedException gets an @ExceptionHandler.
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
+
+            assertThat(characterRepository.findAll().stream()
+                    .filter(c -> "Intruder".equals(c.getName()))).isEmpty();
         }
     }
 
@@ -314,6 +320,30 @@ class CharacterIT extends BaseIntegrationTest {
             mockMvc.perform(get("/api/v1/characters/{roomId}/{characterId}/edit", room.getId(), 9999999L))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("member editing someone else's character → 403 Forbidden")
+        void edit_memberEditingOthersCharacter_returns403() throws Exception {
+            long id = createViaApi(creatorProfile, characterBody("Creator NPC", "alive", "[]"));
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/characters/{roomId}/{characterId}/edit", room.getId(), id))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("member editing their own character → 200 OK")
+        void edit_memberEditingOwnCharacter_returns200() throws Exception {
+            long id = createViaApi(memberProfile, characterBody("Member Hero", "alive", "[]"));
+            entityManager.flush();
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(get("/api/v1/characters/{roomId}/{characterId}/edit", room.getId(), id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.id").value(id))
+                    .andExpect(jsonPath("$.name").value("Member Hero"));
+        }
     }
 
     @Nested
@@ -444,10 +474,37 @@ class CharacterIT extends BaseIntegrationTest {
                             .content(characterBody("Ghost", "alive", "[]")))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("member updating someone else's character → 403 Forbidden")
+        void update_memberUpdatingOthersCharacter_returns403() throws Exception {
+            long id = createViaApi(creatorProfile, characterBody("Creator NPC", "alive", "[]"));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(patch("/api/v1/characters/{roomId}/{characterId}", room.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(characterBody("Hacked", "alive", "[]")))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("member updating their own character → 204 No Content")
+        void update_memberUpdatingOwnCharacter_returns204() throws Exception {
+            long id = createViaApi(memberProfile, characterBody("Member Hero", "alive", "[]"));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(patch("/api/v1/characters/{roomId}/{characterId}", room.getId(), id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(characterBody("Member Hero Renamed", "alive", "[]")))
+                    .andExpect(status().isNoContent());
+
+            Character saved = characterRepository.findById(id).orElseThrow();
+            assertThat(saved.getName()).isEqualTo("Member Hero Renamed");
+        }
     }
 
     @Nested
-    @DisplayName("DELETE /api/v1/characters/{characterId}")
+    @DisplayName("DELETE /api/v1/characters/{roomId}/{characterId}")
     class DeleteTests {
 
         @Test
@@ -456,19 +513,68 @@ class CharacterIT extends BaseIntegrationTest {
             long id = createViaApi(creatorProfile, characterBody("Doomed", "alive", "[]"));
 
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/characters/{characterId}", id))
+            mockMvc.perform(delete("/api/v1/characters/{roomId}/{characterId}", room.getId(), id))
                     .andExpect(status().isNoContent());
 
             assertThat(characterRepository.findById(id)).isEmpty();
         }
 
         @Test
-        @DisplayName("unknown character id → 204 (repository.deleteById is lenient, no existence check in service)")
-        void delete_unknownId_isSilentlyIgnored() throws Exception {
+        @DisplayName("unknown character id → 404 (the delete resolves the row inside the path room)")
+        void delete_unknownId_returns404() throws Exception {
             authenticateAs(creatorProfile);
-            mockMvc.perform(delete("/api/v1/characters/{characterId}", 9999999L))
-                    // Pinned current behaviour: CharacterService#deleteCharacter never verifies existence.
+            mockMvc.perform(delete("/api/v1/characters/{roomId}/{characterId}", room.getId(), 9999999L))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a character from another room → 404 and survives (no cross-room delete)")
+        void delete_otherRoomCharacter_returns404() throws Exception {
+            long id = createViaApi(creatorProfile, characterBody("Keep me", "alive", "[]"));
+            // memberProfile gets an account in the second room, so @CurrentAccount resolves there
+            Room otherRoom = newRoomOwnedBy(memberProfile, "Other Room");
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/characters/{roomId}/{characterId}", otherRoom.getId(), id))
+                    .andExpect(status().isNotFound());
+
+            assertThat(characterRepository.findById(id)).isPresent();
+        }
+
+        @Test
+        @DisplayName("member deleting someone else's character → 403 Forbidden")
+        void delete_memberDeletingOthersCharacter_returns403() throws Exception {
+            long id = createViaApi(creatorProfile, characterBody("Creator NPC", "alive", "[]"));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/characters/{roomId}/{characterId}", room.getId(), id))
+                    .andExpect(status().isForbidden());
+
+            assertThat(characterRepository.findById(id)).isPresent();
+        }
+
+        @Test
+        @DisplayName("member deleting their own character → 204 No Content")
+        void delete_memberDeletingOwnCharacter_returns204() throws Exception {
+            long id = createViaApi(memberProfile, characterBody("Member Hero", "alive", "[]"));
+
+            authenticateAs(memberProfile);
+            mockMvc.perform(delete("/api/v1/characters/{roomId}/{characterId}", room.getId(), id))
                     .andExpect(status().isNoContent());
+
+            assertThat(characterRepository.findById(id)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("room creator deleting member's character → 204 No Content")
+        void delete_creatorDeletingMembersCharacter_returns204() throws Exception {
+            long id = createViaApi(memberProfile, characterBody("Member Hero", "alive", "[]"));
+
+            authenticateAs(creatorProfile);
+            mockMvc.perform(delete("/api/v1/characters/{roomId}/{characterId}", room.getId(), id))
+                    .andExpect(status().isNoContent());
+
+            assertThat(characterRepository.findById(id)).isEmpty();
         }
     }
 
@@ -540,7 +646,7 @@ class CharacterIT extends BaseIntegrationTest {
         @DisplayName("role-gated block is hidden from a member without that role (placeholder dropped)")
         void edit_roleGatedBlockHiddenFromMemberWithoutRole() throws Exception {
             Role insider = newRole(room, "Inner circle");
-            long id = createViaApi(creatorProfile, characterWithBlock(
+            long id = createViaApi(memberProfile, characterWithBlock(
                     "Kaera",
                     "Intro {restrictedBlock localId=\"a\"} end",
                     added("a", "Secret diary page", Map.of("roles", List.of(insider.getId().toString())))));
@@ -557,7 +663,7 @@ class CharacterIT extends BaseIntegrationTest {
         @DisplayName("member holding the block's role sees the expanded block")
         void edit_roleGatedBlockVisibleToMemberWithRole() throws Exception {
             Role insider = newRole(room, "Inner circle");
-            long id = createViaApi(creatorProfile, characterWithBlock(
+            long id = createViaApi(memberProfile, characterWithBlock(
                     "Kaera",
                     "Intro {restrictedBlock localId=\"a\"}",
                     added("a", "Secret diary page", Map.of("roles", List.of(insider.getId().toString())))));

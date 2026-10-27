@@ -33,7 +33,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * <p><b>Documented status map</b> (consistent across the whole IT suite):
  * <ul>
  *   <li>every endpoint takes {@code @CurrentAccount} → anonymous → 403, stranger (no account in
- *       the room) → 500 (unmapped resolver {@code AccessDeniedException});</li>
+ *       the room) → 403 (resolver {@code AccessDeniedException}, mapped by
+ *       {@code GlobalExceptionHandler});</li>
  *   <li>{@code read} / {@code delete} of a notification that does not belong to the acting
  *       account (or is unknown) → 404;</li>
  *   <li>{@code read-all} / {@code delete-all} / {@code preferences} save → 204;</li>
@@ -273,11 +274,11 @@ class NotificationIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("stranger without an account in the room → 500 (unmapped AccessDeniedException)")
-        void stranger_returns500_currentBehaviour() throws Exception {
+        @DisplayName("stranger without an account in the room → 403 (mapped AccessDeniedException)")
+        void stranger_returns403() throws Exception {
             authenticateAs(newProfile("stranger"));
             mockMvc.perform(get("/api/v1/notifications/{roomId}", room.getId()))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 }

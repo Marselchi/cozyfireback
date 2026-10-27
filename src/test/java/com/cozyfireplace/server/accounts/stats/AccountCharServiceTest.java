@@ -3,6 +3,8 @@ package com.cozyfireplace.server.accounts.stats;
 import com.cozyfireplace.server.accounts.Account;
 import com.cozyfireplace.server.accounts.AccountChar;
 import com.cozyfireplace.server.accounts.AccountRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
@@ -24,21 +26,24 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link AccountCharService}.
  * <p>
- * All repositories and the {@link AccountCharMapper} are mocked; the character entity is real so
- * the D&amp;D 5e stat-modifier math and the create/update wiring are genuinely exercised. Covers
- * the read/self-read lookups, character creation (level default and stat modifier) and the update
- * flow including its optimistic-locking guard.
+ * All repositories, {@link RoomSecurityService} and the {@link AccountCharMapper} are mocked; the
+ * character entity is real so the D&amp;D 5e stat-modifier math and the create/update wiring are
+ * genuinely exercised. Covers the read/self-read lookups, character creation (level default and
+ * stat modifier) and the room-scoped update flow including its ownership guard and
+ * optimistic-locking check.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AccountCharService")
 class AccountCharServiceTest {
 
     private static final Long CHAR_ID = 5L;
+    private static final Long ROOM_ID = 7L;
 
     @Mock
     private AccountCharRepository accountCharRepository;
@@ -46,6 +51,8 @@ class AccountCharServiceTest {
     private AccountRepository accountRepository;
     @Mock
     private StatRepository statRepository;
+    @Mock
+    private RoomSecurityService roomSecurityService;
     @Mock
     private AccountCharMapper accountCharMapper;
 
@@ -168,22 +175,60 @@ class AccountCharServiceTest {
     class Update {
 
         @Test
-        @DisplayName("throws when the character is unknown")
+        @DisplayName("throws when the character is not in the requested room")
         void missing() {
-            when(accountCharRepository.findByIdWithStatsAndSkills(CHAR_ID)).thenReturn(Optional.empty());
+            when(accountCharRepository.findByIdWithStatsAndSkillsInRoom(CHAR_ID, ROOM_ID))
+                    .thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.updateCharacter(CHAR_ID, CharacterUpdateRequest.builder().build(), mock(Account.class)))
-                    .isInstanceOf(EntityNotFoundException.class);
+            assertThatThrownBy(() -> service.updateCharacter(ROOM_ID, CHAR_ID,
+                    CharacterUpdateRequest.builder().build(), mock(Account.class)))
+                    .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("throws when neither the account owns the character nor is the room creator")
+        void forbiddenForStranger() {
+            AccountChar character = AccountChar.builder().id(CHAR_ID).build();
+            when(accountCharRepository.findByIdWithStatsAndSkillsInRoom(CHAR_ID, ROOM_ID))
+                    .thenReturn(Optional.of(character));
+            Account account = mock(Account.class);
+            when(account.getAccountChar()).thenReturn(null);
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.updateCharacter(ROOM_ID, CHAR_ID,
+                    CharacterUpdateRequest.builder().name("Hacked").build(), account))
+                    .isInstanceOf(ForbiddenException.class);
+            verify(accountCharRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("the room creator may edit somebody else's character")
+        void creatorMayEdit() {
+            AccountChar character = AccountChar.builder().id(CHAR_ID).name("old").build();
+            when(accountCharRepository.findByIdWithStatsAndSkillsInRoom(CHAR_ID, ROOM_ID))
+                    .thenReturn(Optional.of(character));
+            when(accountCharRepository.save(character)).thenReturn(character);
+            Account account = mock(Account.class);
+            when(account.getAccountChar()).thenReturn(AccountChar.builder().id(99L).build());
+            when(roomSecurityService.isCreator(account)).thenReturn(true);
+            CharacterResponse response = mock(CharacterResponse.class);
+            when(accountCharMapper.toResponse(character)).thenReturn(response);
+
+            assertThat(service.updateCharacter(ROOM_ID, CHAR_ID,
+                    CharacterUpdateRequest.builder().name("Renamed").build(), account)).isSameAs(response);
+            assertThat(character.getName()).isEqualTo("Renamed");
         }
 
         @Test
         @DisplayName("throws when the supplied version is stale")
         void versionMismatch() {
             AccountChar character = AccountChar.builder().id(CHAR_ID).version(1).build();
-            when(accountCharRepository.findByIdWithStatsAndSkills(CHAR_ID)).thenReturn(Optional.of(character));
+            when(accountCharRepository.findByIdWithStatsAndSkillsInRoom(CHAR_ID, ROOM_ID))
+                    .thenReturn(Optional.of(character));
             CharacterUpdateRequest request = CharacterUpdateRequest.builder().version(2).name("Nyra").build();
 
-            assertThatThrownBy(() -> service.updateCharacter(CHAR_ID, request, mock(Account.class)))
+            assertThatThrownBy(() -> service.updateCharacter(ROOM_ID, CHAR_ID, request, ownerOf(character)))
                     .isInstanceOf(OptimisticLockException.class);
             verify(accountCharRepository, never()).save(any());
         }
@@ -192,14 +237,22 @@ class AccountCharServiceTest {
         @DisplayName("applies non-null fields and saves")
         void appliesAndSaves() {
             AccountChar character = AccountChar.builder().id(CHAR_ID).name("old").build();
-            when(accountCharRepository.findByIdWithStatsAndSkills(CHAR_ID)).thenReturn(Optional.of(character));
+            when(accountCharRepository.findByIdWithStatsAndSkillsInRoom(CHAR_ID, ROOM_ID))
+                    .thenReturn(Optional.of(character));
             when(accountCharRepository.save(character)).thenReturn(character);
             CharacterResponse response = mock(CharacterResponse.class);
             when(accountCharMapper.toResponse(character)).thenReturn(response);
             CharacterUpdateRequest request = CharacterUpdateRequest.builder().name("Renamed").build();
 
-            assertThat(service.updateCharacter(CHAR_ID, request, mock(Account.class))).isSameAs(response);
+            assertThat(service.updateCharacter(ROOM_ID, CHAR_ID, request, ownerOf(character))).isSameAs(response);
             assertThat(character.getName()).isEqualTo("Renamed");
+        }
+
+        /** An account whose own character is the one being edited — no creator lookup needed. */
+        private Account ownerOf(AccountChar character) {
+            Account account = mock(Account.class);
+            when(account.getAccountChar()).thenReturn(character);
+            return account;
         }
     }
 }

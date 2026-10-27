@@ -117,10 +117,9 @@ class AccountIT extends BaseIntegrationTest {
             newRoomOwnedBy(stranger, "Home Room");
             authenticateAs(stranger);
 
-            // CurrentAccountResolver -> AccessDeniedException is unmapped today and
-            // surfaces as 500 through the generic advice. Pinned intentionally.
+            // CurrentAccountResolver -> AccessDeniedException, mapped by GlobalExceptionHandler -> 403.
             mockMvc.perform(get("/api/v1/accounts/{roomId}/all", room.getId()))
-                    .andExpect(status().isInternalServerError());
+                    .andExpect(status().isForbidden());
         }
     }
 
@@ -269,6 +268,79 @@ class AccountIT extends BaseIntegrationTest {
                                     {"oldRoleId":%d,"newRoleId":%d}
                                     """.formatted(oldRole.getId(), newRole.getId())))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("POST should return 403 when the requester is not the room creator")
+        void addRole_byNonCreator() throws Exception {
+            Profile dm = newProfile("dm");
+            Room room = newRoomOwnedBy(dm, "Role Room");
+            Role role = newRole(room, "Bard");
+            Profile player = newProfile("player");
+            newAccount(player, room, "Nyra");
+            authenticateAs(player);
+
+            mockMvc.perform(post("/api/v1/accounts/{roomId}/{accountId}/role", room.getId(), room.getCreator().getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(String.valueOf(role.getId())))
+                    .andExpect(status().isForbidden());
+
+            Account reloaded = accountRepository.findById(room.getCreator().getId()).orElseThrow();
+            assertThat(reloaded.getRoles(), hasSize(0));
+        }
+
+        @Test
+        @DisplayName("POST should return 404 for an account that lives in another room")
+        void addRole_accountFromOtherRoom() throws Exception {
+            Profile dm = newProfile("dm");
+            Room room = newRoomOwnedBy(dm, "Role Room");
+            Role role = newRole(room, "Bard");
+            Room otherRoom = newRoomOwnedBy(newProfile("other-dm"), "Other Room");
+            authenticateAs(dm);
+
+            mockMvc.perform(post("/api/v1/accounts/{roomId}/{accountId}/role", room.getId(), otherRoom.getCreator().getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(String.valueOf(role.getId())))
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("POST should return 404 for a role owned by another room (no cross-room role grant)")
+        void addRole_roleFromOtherRoom() throws Exception {
+            Profile dm = newProfile("dm");
+            Room room = newRoomOwnedBy(dm, "Role Room");
+            Room otherRoom = newRoomOwnedBy(newProfile("other-dm"), "Other Room");
+            Role foreignRole = newRole(otherRoom, "Foreign bard");
+            authenticateAs(dm);
+
+            mockMvc.perform(post("/api/v1/accounts/{roomId}/{accountId}/role", room.getId(), room.getCreator().getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(String.valueOf(foreignRole.getId())))
+                    .andExpect(status().isNotFound());
+
+            assertThat(accountRepository.findById(room.getCreator().getId())
+                    .orElseThrow().getRoles(), hasSize(0));
+        }
+
+        @Test
+        @DisplayName("DELETE should return 403 when the requester is not the room creator")
+        void deleteRole_byNonCreator() throws Exception {
+            Profile dm = newProfile("dm");
+            Room room = newRoomOwnedBy(dm, "Role Room");
+            Role role = newRole(room, "Bard");
+            room.getCreator().getRoles().add(role);
+            accountRepository.save(room.getCreator());
+            Profile player = newProfile("player");
+            newAccount(player, room, "Nyra");
+            authenticateAs(player);
+
+            mockMvc.perform(delete("/api/v1/accounts/{roomId}/{accountId}/role", room.getId(), room.getCreator().getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(String.valueOf(role.getId())))
+                    .andExpect(status().isForbidden());
+
+            Account reloaded = accountRepository.findById(room.getCreator().getId()).orElseThrow();
+            assertThat(reloaded.getRoles(), hasSize(1));
         }
     }
 

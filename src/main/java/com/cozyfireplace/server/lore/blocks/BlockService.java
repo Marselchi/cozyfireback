@@ -12,6 +12,8 @@ import com.cozyfireplace.server.lore.blocks.dto.*;
 import com.cozyfireplace.server.roles.Role;
 import com.cozyfireplace.server.roles.RoleRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
+import com.cozyfireplace.server.util.exception.NotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -474,9 +476,9 @@ public class BlockService {
     }
 
     @Transactional
-    public RollResultResponse roll(Long blockId, Account account) {
-        Block block = blockRepository.findByIdWithChanceAndRoles(blockId)
-                .orElseThrow(() -> new EntityNotFoundException("Block not found"));
+    public RollResultResponse roll(Long roomId, Long blockId, Account account) {
+        Block block = blockRepository.findByIdWithChanceAndRolesInRoom(blockId, roomId)
+                .orElseThrow(() -> new NotFoundException("Block", blockId));
 
         if (!block.hasChance()) {
             throw new IllegalStateException("Block does not have chance config");
@@ -520,9 +522,9 @@ public class BlockService {
     }
 
     @Transactional
-    public AccessRecordResponse resetAccess(Long recordId) {
-        AccessRecordWithAccount res = accessRecordRepository.findByIdWithAccount(recordId)
-                .orElseThrow(() -> new EntityNotFoundException("Access record not found"));
+    public AccessRecordResponse resetAccess(Long roomId, Long recordId) {
+        AccessRecordWithAccount res = findRecordInRoom(roomId, recordId);
+        assertCreator(roomId);
 
         AccessRecord record = res.getRecord();
         record.setStatus(AccessStatus.PENDING);
@@ -533,9 +535,10 @@ public class BlockService {
     }
 
     @Transactional
-    public AccessRecordResponse grantAccess(Long recordId) {
-        AccessRecordWithAccount res = accessRecordRepository.findByIdWithAccount(recordId)
-                .orElseThrow(() -> new EntityNotFoundException("Access record not found"));
+    public AccessRecordResponse grantAccess(Long roomId, Long recordId) {
+        AccessRecordWithAccount res = findRecordInRoom(roomId, recordId);
+        assertCreator(roomId);
+
         AccessRecord record = res.getRecord();
         record.setStatus(AccessStatus.GRANTED);
 
@@ -544,9 +547,9 @@ public class BlockService {
     }
 
     @Transactional
-    public AccessRecordResponse denyAccess(Long recordId) {
-        AccessRecordWithAccount res = accessRecordRepository.findByIdWithAccount(recordId)
-                .orElseThrow(() -> new EntityNotFoundException("Access record not found"));
+    public AccessRecordResponse denyAccess(Long roomId, Long recordId) {
+        AccessRecordWithAccount res = findRecordInRoom(roomId, recordId);
+        assertCreator(roomId);
 
         AccessRecord record = res.getRecord();
         record.setStatus(AccessStatus.DENIED);
@@ -555,13 +558,29 @@ public class BlockService {
         return blockMapper.toAccessRecordResponse(record, res.getUserId(), res.getUserName());
     }
 
+    /**
+     * Запись ищется строго в комнате из пути (комната выводится из блока), поэтому чужой
+     * recordId отвечает 404 и не выдаёт existence-утечку другой комнаты.
+     */
+    private AccessRecordWithAccount findRecordInRoom(Long roomId, Long recordId) {
+        return accessRecordRepository.findByIdWithAccountInRoom(recordId, roomId)
+                .orElseThrow(() -> new NotFoundException("AccessRecord", recordId));
+    }
+
+    private void assertCreator(Long roomId) {
+        if (!roomSecurityService.isCreator(roomId)) {
+            throw new ForbiddenException("Управление доступом", "только создатель комнаты может управлять доступом к блокам");
+        }
+    }
+
     @Transactional
-    public ChanceConfigResponse updateChanceConfig(Long blockId, ChanceConfigRequest request) {
-        Block block = blockRepository.findByIdWithChanceAndRoles(blockId)
-                .orElseThrow(() -> new EntityNotFoundException("Block not found"));
+    public ChanceConfigResponse updateChanceConfig(Long roomId, Long blockId, ChanceConfigRequest request) {
+        Block block = blockRepository.findByIdWithChanceAndRolesInRoom(blockId, roomId)
+                .orElseThrow(() -> new NotFoundException("Block", blockId));
+        assertCreator(roomId);
 
         Skill skill = skillRepository.findById(request.getSkill())
-                .orElseThrow(() -> new EntityNotFoundException("Skill not found: " + request.getSkill()));
+                .orElseThrow(() -> new NotFoundException("Skill", request.getSkill()));
 
         ChanceConfig config = block.getChanceConfig();
         if (config == null) {

@@ -12,6 +12,7 @@ import com.cozyfireplace.server.questions.QuestionRepository;
 import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -28,7 +29,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -188,29 +188,65 @@ class AnswerServiceTest {
     class Update {
 
         @Test
-        @DisplayName("throws NotFound when the answer is missing")
+        @DisplayName("throws NotFound when the answer lives in another room")
         void notFound() {
-            when(answerRepository.findById(ANSWER_ID)).thenReturn(Optional.empty());
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.updateAnswer(ANSWER_ID, new AnswerUpdateRequest("new")))
+            assertThatThrownBy(() -> service.updateAnswer(ROOM_ID, ANSWER_ID,
+                    new AnswerUpdateRequest("new"), Account.builder().id(ACCOUNT_ID).build()))
                     .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roomSecurityService);
+        }
+
+        @Test
+        @DisplayName("throws Forbidden when the caller is neither author nor creator")
+        void forbidden() {
+            Answer answer = Answer.builder().id(ANSWER_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.of(answer));
+
+            assertThatThrownBy(() -> service.updateAnswer(ROOM_ID, ANSWER_ID,
+                    new AnswerUpdateRequest("new"), Account.builder().id(ACCOUNT_ID).build()))
+                    .isInstanceOf(ForbiddenException.class);
+            verify(answerRepository, never()).save(any());
         }
 
         @Test
         @DisplayName("replaces content, re-reads the reply count and maps it")
-        void success() {
-            Answer answer = Answer.builder().id(ANSWER_ID).content("old").build();
-            when(answerRepository.findById(ANSWER_ID)).thenReturn(Optional.of(answer));
+        void authorSuccess() {
+            Answer answer = Answer.builder().id(ANSWER_ID).content("old")
+                    .author(Account.builder().id(ACCOUNT_ID).build()).build();
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.of(answer));
             when(answerRepository.save(answer)).thenReturn(answer);
             AnswerWithReplyCount withCount = mock(AnswerWithReplyCount.class);
             when(answerRepository.findByIdWithReplyCount(ANSWER_ID)).thenReturn(Optional.of(withCount));
             AnswerResponse response = mock(AnswerResponse.class);
             when(answerMapper.toAnswerResponse(withCount)).thenReturn(response);
 
-            AnswerResponse result = service.updateAnswer(ANSWER_ID, new AnswerUpdateRequest("new"));
+            AnswerResponse result = service.updateAnswer(ROOM_ID, ANSWER_ID,
+                    new AnswerUpdateRequest("new"), Account.builder().id(ACCOUNT_ID).build());
 
             assertThat(answer.getContent()).isEqualTo("new");
             assertThat(result).isSameAs(response);
+        }
+
+        @Test
+        @DisplayName("the room creator may edit somebody else's answer")
+        void creatorSuccess() {
+            Answer answer = Answer.builder().id(ANSWER_ID).content("old")
+                    .author(Account.builder().id(999L).build()).build();
+            Account creator = Account.builder().id(ACCOUNT_ID).build();
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.of(answer));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+            when(answerRepository.save(answer)).thenReturn(answer);
+            when(answerRepository.findByIdWithReplyCount(ANSWER_ID))
+                    .thenReturn(Optional.of(mock(AnswerWithReplyCount.class)));
+            when(answerMapper.toAnswerResponse(any(AnswerWithReplyCount.class)))
+                    .thenReturn(mock(AnswerResponse.class));
+
+            service.updateAnswer(ROOM_ID, ANSWER_ID, new AnswerUpdateRequest("new"), creator);
+
+            assertThat(answer.getContent()).isEqualTo("new");
         }
     }
 
@@ -219,22 +255,51 @@ class AnswerServiceTest {
     class Delete {
 
         @Test
-        @DisplayName("throws NotFound when nothing exists to delete")
+        @DisplayName("throws NotFound when the answer lives in another room")
         void notFound() {
-            when(answerRepository.existsById(ANSWER_ID)).thenReturn(false);
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.deleteAnswer(ANSWER_ID)).isInstanceOf(NotFoundException.class);
-            verify(answerRepository, never()).deleteById(anyLong());
+            assertThatThrownBy(() -> service.deleteAnswer(ROOM_ID, ANSWER_ID,
+                    Account.builder().id(ACCOUNT_ID).build())).isInstanceOf(NotFoundException.class);
+            verify(answerRepository, never()).delete(any());
         }
 
         @Test
-        @DisplayName("deletes when present")
-        void deletes() {
-            when(answerRepository.existsById(ANSWER_ID)).thenReturn(true);
+        @DisplayName("throws Forbidden when the caller is neither author nor creator")
+        void forbidden() {
+            Answer answer = Answer.builder().id(ANSWER_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.of(answer));
 
-            service.deleteAnswer(ANSWER_ID);
+            assertThatThrownBy(() -> service.deleteAnswer(ROOM_ID, ANSWER_ID,
+                    Account.builder().id(ACCOUNT_ID).build())).isInstanceOf(ForbiddenException.class);
+            verify(answerRepository, never()).delete(any());
+        }
 
-            verify(answerRepository).deleteById(ANSWER_ID);
+        @Test
+        @DisplayName("the author deletes their own answer")
+        void authorDeletes() {
+            Answer answer = Answer.builder().id(ANSWER_ID)
+                    .author(Account.builder().id(ACCOUNT_ID).build()).build();
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.of(answer));
+
+            service.deleteAnswer(ROOM_ID, ANSWER_ID, Account.builder().id(ACCOUNT_ID).build());
+
+            verify(answerRepository).delete(answer);
+        }
+
+        @Test
+        @DisplayName("the room creator deletes an answer of another account")
+        void creatorDeletes() {
+            Answer answer = Answer.builder().id(ANSWER_ID)
+                    .author(Account.builder().id(999L).build()).build();
+            Account creator = Account.builder().id(ACCOUNT_ID).build();
+            when(answerRepository.findByRoomIdAndId(ROOM_ID, ANSWER_ID)).thenReturn(Optional.of(answer));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+
+            service.deleteAnswer(ROOM_ID, ANSWER_ID, creator);
+
+            verify(answerRepository).delete(answer);
         }
     }
 

@@ -1,12 +1,13 @@
 package com.cozyfireplace.server.templates;
 
 import com.cozyfireplace.server.accounts.Account;
-import com.cozyfireplace.server.accounts.AccountRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.templates.dto.TemplateCreateRequest;
 import com.cozyfireplace.server.templates.dto.TemplateDetailResponse;
 import com.cozyfireplace.server.templates.dto.TemplateMapper;
 import com.cozyfireplace.server.templates.dto.TemplateResponse;
 import com.cozyfireplace.server.templates.dto.TemplateUpdateRequest;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,6 +30,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,25 +38,36 @@ import static org.mockito.Mockito.when;
  * <p>
  * The repository and MapStruct mapper are mocked. Exercises the search-vs-browse branch of
  * listing, the entity construction on create, the DTO-onto-entity update and the not-found
- * guards. JPA pagination internals are supplied via a real {@link PageImpl} so the
- * {@code Page#map} projection is genuinely exercised.
+ * guards. Update and delete are room-scoped: the repository lookup is keyed by
+ * {@code (roomId, templateId)} — an id from another room answers 404 — and only afterwards does
+ * the author-or-creator check run, so a stranger gets 403. JPA pagination internals are supplied
+ * via a real {@link PageImpl} so the {@code Page#map} projection is genuinely exercised.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TemplateService")
 class TemplateServiceTest {
 
+    private static final Long ROOM_ID = 7L;
     private static final Long TEMPLATE_ID = 2L;
     private static final Long AUTHOR_ID = 42L;
 
     @Mock
     private TemplateRepository templateRepository;
     @Mock
-    private AccountRepository accountRepository;
+    private RoomSecurityService roomSecurityService;
     @Mock
     private TemplateMapper templateMapper;
 
     @InjectMocks
     private TemplateService service;
+
+    /**
+     * The service only reads {@code Account#getId()} when comparing the caller to the template
+     * author, so a real (unmocked) entity is enough and keeps Mockito's strict stubbing happy.
+     */
+    private static Account account(Long id) {
+        return Account.builder().id(id).build();
+    }
 
     @Nested
     @DisplayName("getAllTemplates")
@@ -116,22 +129,11 @@ class TemplateServiceTest {
     class Create {
 
         @Test
-        @DisplayName("throws NotFound when the author account is missing")
-        void authorNotFound() {
-            when(accountRepository.findById(AUTHOR_ID)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.createTemplate(new TemplateCreateRequest("n", "c"), AUTHOR_ID))
-                    .isInstanceOf(NotFoundException.class);
-            verify(templateRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("builds and persists a template owned by the author")
+        @DisplayName("builds and persists a template owned by the resolved account")
         void buildsAndSaves() {
-            Account author = mock(Account.class);
-            when(accountRepository.findById(AUTHOR_ID)).thenReturn(Optional.of(author));
+            Account author = account(AUTHOR_ID);
 
-            service.createTemplate(new TemplateCreateRequest("NPC", "body"), AUTHOR_ID);
+            service.createTemplate(new TemplateCreateRequest("NPC", "body"), author);
 
             ArgumentCaptor<Template> captor = ArgumentCaptor.forClass(Template.class);
             verify(templateRepository).save(captor.capture());
@@ -147,22 +149,51 @@ class TemplateServiceTest {
     class Update {
 
         @Test
-        @DisplayName("throws NotFound when the template is missing")
+        @DisplayName("throws NotFound when the template lives in another room")
         void notFound() {
-            when(templateRepository.findById(TEMPLATE_ID)).thenReturn(Optional.empty());
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.updateTemplateName(TEMPLATE_ID, new TemplateUpdateRequest("n")))
+            assertThatThrownBy(() -> service.updateTemplateName(ROOM_ID, TEMPLATE_ID, new TemplateUpdateRequest("n"), account(AUTHOR_ID)))
                     .isInstanceOf(NotFoundException.class);
+            verifyNoInteractions(roomSecurityService);
         }
 
         @Test
-        @DisplayName("applies the DTO onto the entity and saves")
+        @DisplayName("throws Forbidden when the caller is neither author nor creator")
+        void forbidden() {
+            Template template = Template.builder().id(TEMPLATE_ID).author(account(AUTHOR_ID)).build();
+            Account stranger = account(99L);
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.of(template));
+            when(roomSecurityService.isCreator(stranger)).thenReturn(false);
+
+            assertThatThrownBy(() -> service.updateTemplateName(ROOM_ID, TEMPLATE_ID, new TemplateUpdateRequest("n"), stranger))
+                    .isInstanceOf(ForbiddenException.class);
+            verify(templateRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("applies the DTO onto the entity and saves for the author")
         void appliesAndSaves() {
-            Template template = Template.builder().id(TEMPLATE_ID).build();
-            when(templateRepository.findById(TEMPLATE_ID)).thenReturn(Optional.of(template));
+            Template template = Template.builder().id(TEMPLATE_ID).author(account(AUTHOR_ID)).build();
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.of(template));
             TemplateUpdateRequest request = new TemplateUpdateRequest("renamed");
 
-            service.updateTemplateName(TEMPLATE_ID, request);
+            service.updateTemplateName(ROOM_ID, TEMPLATE_ID, request, account(AUTHOR_ID));
+
+            verify(templateMapper).updateTemplateFromRequest(request, template);
+            verify(templateRepository).save(template);
+        }
+
+        @Test
+        @DisplayName("room creator may rename a template they did not author")
+        void creatorAppliesAndSaves() {
+            Template template = Template.builder().id(TEMPLATE_ID).author(account(AUTHOR_ID)).build();
+            Account creator = account(99L);
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.of(template));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+            TemplateUpdateRequest request = new TemplateUpdateRequest("renamed");
+
+            service.updateTemplateName(ROOM_ID, TEMPLATE_ID, request, creator);
 
             verify(templateMapper).updateTemplateFromRequest(request, template);
             verify(templateRepository).save(template);
@@ -174,22 +205,50 @@ class TemplateServiceTest {
     class Delete {
 
         @Test
-        @DisplayName("throws NotFound when nothing exists")
+        @DisplayName("throws NotFound when nothing exists in the room")
         void notFound() {
-            when(templateRepository.existsById(TEMPLATE_ID)).thenReturn(false);
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.deleteTemplate(TEMPLATE_ID)).isInstanceOf(NotFoundException.class);
-            verify(templateRepository, never()).deleteById(TEMPLATE_ID);
+            assertThatThrownBy(() -> service.deleteTemplate(ROOM_ID, TEMPLATE_ID, account(AUTHOR_ID)))
+                    .isInstanceOf(NotFoundException.class);
+            verify(templateRepository, never()).delete(any());
         }
 
         @Test
-        @DisplayName("deletes when present")
-        void deletes() {
-            when(templateRepository.existsById(TEMPLATE_ID)).thenReturn(true);
+        @DisplayName("throws Forbidden when the caller is neither author nor creator")
+        void forbidden() {
+            Template template = Template.builder().id(TEMPLATE_ID).author(account(AUTHOR_ID)).build();
+            Account stranger = account(99L);
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.of(template));
+            when(roomSecurityService.isCreator(stranger)).thenReturn(false);
 
-            service.deleteTemplate(TEMPLATE_ID);
+            assertThatThrownBy(() -> service.deleteTemplate(ROOM_ID, TEMPLATE_ID, stranger))
+                    .isInstanceOf(ForbiddenException.class);
+            verify(templateRepository, never()).delete(any());
+        }
 
-            verify(templateRepository).deleteById(TEMPLATE_ID);
+        @Test
+        @DisplayName("deletes when the author asks")
+        void authorDeletes() {
+            Template template = Template.builder().id(TEMPLATE_ID).author(account(AUTHOR_ID)).build();
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.of(template));
+
+            service.deleteTemplate(ROOM_ID, TEMPLATE_ID, account(AUTHOR_ID));
+
+            verify(templateRepository).delete(template);
+        }
+
+        @Test
+        @DisplayName("deletes when the room creator asks")
+        void creatorDeletes() {
+            Template template = Template.builder().id(TEMPLATE_ID).author(account(AUTHOR_ID)).build();
+            Account creator = account(99L);
+            when(templateRepository.findByRoomIdAndId(ROOM_ID, TEMPLATE_ID)).thenReturn(Optional.of(template));
+            when(roomSecurityService.isCreator(creator)).thenReturn(true);
+
+            service.deleteTemplate(ROOM_ID, TEMPLATE_ID, creator);
+
+            verify(templateRepository).delete(template);
         }
     }
 }

@@ -48,6 +48,10 @@ public interface AccountRepository extends JpaRepository<Account, Long> {
 
     Optional<Account> findByProfileAndRoomId(Profile profile, Long id);
 
+    // Аккаунт ищется строго внутри комнаты: чужой accountId отвечает 404,
+    // а не выдачей прав в другой комнате.
+    Optional<Account> findByIdAndRoomId(Long id, Long roomId);
+
     @Query("SELECT a FROM Account a " +
             "LEFT JOIN FETCH a.roles " +
             "LEFT JOIN FETCH a.profile " +

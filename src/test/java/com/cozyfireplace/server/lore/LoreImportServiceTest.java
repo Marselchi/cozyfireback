@@ -40,6 +40,14 @@ import static org.mockito.Mockito.*;
  * tests focus on charset handling, wiki-link rewriting and conflict strategy.
  * The {@code appDomain} property used to build links is injected by reflection.
  */
+import com.cozyfireplace.server.lore.blocks.Block;
+import com.cozyfireplace.server.lore.blocks.BlockRepository;
+import com.cozyfireplace.server.lore.blocks.dto.AddedBlockRequest;
+import com.cozyfireplace.server.roles.Role;
+import com.cozyfireplace.server.roles.RoleRepository;
+import org.mockito.Spy;
+import tools.jackson.databind.ObjectMapper;
+
 @ExtendWith(MockitoExtension.class)
 @DisplayName("LoreImportService")
 class LoreImportServiceTest {
@@ -53,6 +61,12 @@ class LoreImportServiceTest {
     private RoomRepository roomRepository;
     @Mock
     private LoreService loreService;
+    @Mock
+    private RoleRepository roleRepository;
+    @Mock
+    private BlockRepository blockRepository;
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @InjectMocks
     private LoreImportService importService;
@@ -64,6 +78,8 @@ class LoreImportServiceTest {
         ReflectionTestUtils.setField(importService, "appDomain", "https://cozyfireplace.ru");
         account = mock(Account.class);
         lenient().when(account.getId()).thenReturn(7L);
+        lenient().when(roleRepository.findByRoomId(anyLong())).thenReturn(List.of());
+        lenient().when(blockRepository.findByLoreId(anyLong())).thenReturn(List.of());
     }
 
     // ================= helpers =================
@@ -154,7 +170,7 @@ class LoreImportServiceTest {
                     filters(false, false, false), account);
 
             verify(loreService, never()).createLore(anyLong(), any(), any());
-            verify(loreService, never()).updateLore(anyLong(), any(), any(), anyLong());
+            verify(loreService, never()).updateLore(anyLong(), anyLong(), any(), any());
         }
 
         @Test
@@ -309,7 +325,7 @@ class LoreImportServiceTest {
                     filters(false, false, true), account);
 
             ArgumentCaptor<LoreRequest> captor = ArgumentCaptor.forClass(LoreRequest.class);
-            verify(loreService).updateLore(eq(5L), captor.capture(), eq(account), eq(ROOM_ID));
+            verify(loreService).updateLore(eq(ROOM_ID), eq(5L), captor.capture(), eq(account));
             verify(loreService, never()).createLore(anyLong(), any(), any());
             LoreRequest req = captor.getValue();
             assertEquals("Alpha", req.title());
@@ -331,7 +347,7 @@ class LoreImportServiceTest {
                     filters(false, false, false), account);
 
             verify(loreService, never()).createLore(anyLong(), any(), any());
-            verify(loreService, never()).updateLore(anyLong(), any(), any(), anyLong());
+            verify(loreService, never()).updateLore(anyLong(), anyLong(), any(), any());
         }
 
         @Test
@@ -345,6 +361,74 @@ class LoreImportServiceTest {
                     filters(false, false, false), account);
 
             verify(loreService).createLore(eq(ROOM_ID), eq(account), any(LoreRequest.class));
+        }
+
+        @Test
+        @DisplayName("parses restricted blocks into BlockChangesRequest and replaces with localId placeholders")
+        void parsesRestrictedBlocks() throws Exception {
+            when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room()));
+            when(loreRepository.findByTitleAndRoomId("Story", ROOM_ID)).thenReturn(Optional.empty());
+            when(loreService.createLore(eq(ROOM_ID), eq(account), any(LoreRequest.class))).thenReturn(1L);
+
+            Role role1 = Role.builder().id(3L).build();
+            when(roleRepository.findByRoomId(ROOM_ID)).thenReturn(List.of(role1));
+
+            String content = """
+                    Public intro.
+                    ::: restrictedBlock {"spoilerType":"normal","roles":["3","999"]}
+                    This is a secret.
+                    :::
+                    Public outro.
+                    """;
+
+            importService.importZipFile(ROOM_ID, zipFile(Map.of("Story.md", content)),
+                    filters(false, false, false), account);
+
+            ArgumentCaptor<LoreRequest> captor = ArgumentCaptor.forClass(LoreRequest.class);
+            verify(loreService).createLore(eq(ROOM_ID), eq(account), captor.capture());
+
+            LoreRequest req = captor.getValue();
+            assertFalse(req.content().contains("::: restrictedBlock"));
+            assertTrue(req.content().contains("{restrictedBlock localId="));
+            assertNotNull(req.blockChanges());
+            assertNotNull(req.blockChanges().getAddedBlocks());
+            assertEquals(1, req.blockChanges().getAddedBlocks().size());
+
+            AddedBlockRequest added = req.blockChanges().getAddedBlocks().get(0);
+            assertEquals("This is a secret.", added.getContent());
+            assertEquals(List.of("3"), added.getMetadata().get("roles")); // 999 filtered out
+            assertEquals("normal", added.getMetadata().get("spoilerType"));
+        }
+
+        @Test
+        @DisplayName("replaceOnConflict=true marks existing blocks for deletion and adds imported blocks")
+        void replaceOnConflictWithBlocks() throws Exception {
+            when(roomRepository.findById(ROOM_ID)).thenReturn(Optional.of(room()));
+            when(loreRepository.findByTitleAndRoomId("Alpha", ROOM_ID))
+                    .thenReturn(Optional.of(existingLore(5L, "Alpha", "old with {restrictedBlock id=\"42\"}")));
+
+            Block oldBlock = Block.builder().id(42L).build();
+            when(blockRepository.findByLoreId(5L)).thenReturn(List.of(oldBlock));
+
+            String newContent = """
+                    New public text.
+                    ::: restrictedBlock {"spoilerType":"normal","roles":[]}
+                    New secret.
+                    :::
+                    """;
+
+            importService.importZipFile(ROOM_ID, zipFile(Map.of("Alpha.md", newContent)),
+                    filters(false, false, true), account);
+
+            ArgumentCaptor<LoreRequest> captor = ArgumentCaptor.forClass(LoreRequest.class);
+            verify(loreService).updateLore(eq(ROOM_ID), eq(5L), captor.capture(), eq(account));
+
+            LoreRequest req = captor.getValue();
+            assertNotNull(req.blockChanges());
+            assertEquals(List.of("42"), req.blockChanges().getDeletedBlockIds());
+            assertNotNull(req.blockChanges().getAddedBlocks());
+            assertEquals(1, req.blockChanges().getAddedBlocks().size());
+            assertEquals("New secret.", req.blockChanges().getAddedBlocks().get(0).getContent());
         }
     }
 }

@@ -27,8 +27,8 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link TemplateController}.
  * <p>
  * Thin facade over {@link TemplateService}. Pins the status codes and argument forwarding;
- * notably {@code create} ignores the room id and instead passes the current account's id as
- * the author, and the room id is unused on every endpoint here.
+ * notably every mutation forwards the {@code {roomId}} path variable together with the resolved
+ * account, so the controller cannot be coaxed into touching another room's template.
  */
 @ExtendWith(MockitoExtension.class)
 @DisplayName("TemplateController")
@@ -36,7 +36,6 @@ class TemplateControllerTest {
 
     private static final Long ROOM_ID = 1L;
     private static final Long TEMPLATE_ID = 2L;
-    private static final Long ACCOUNT_ID = 42L;
 
     @Mock
     private TemplateService templateService;
@@ -85,47 +84,49 @@ class TemplateControllerTest {
     class Create {
 
         @Test
-        @DisplayName("returns 204 and authors the template with the current account id")
+        @DisplayName("returns 204 and authors the template with the account resolved for this room")
         void returnsNoContent() {
             Account account = mock(Account.class);
-            when(account.getId()).thenReturn(ACCOUNT_ID);
             TemplateCreateRequest request = new TemplateCreateRequest("NPC", "body");
 
             ResponseEntity<Void> response = controller.create(ROOM_ID, account, request);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(templateService).createTemplate(request, ACCOUNT_ID);
+            verify(templateService).createTemplate(request, account);
         }
     }
 
     @Nested
-    @DisplayName("PUT /{templateId}")
+    @DisplayName("PUT /{roomId}/{templateId}")
     class Update {
 
         @Test
-        @DisplayName("returns 204 and forwards the rename request")
+        @DisplayName("returns 204 and forwards the room, template id and account")
         void returnsNoContent() {
+            Account account = mock(Account.class);
             TemplateUpdateRequest request = new TemplateUpdateRequest("renamed");
 
-            ResponseEntity<Void> response = controller.update(TEMPLATE_ID, request);
+            ResponseEntity<Void> response = controller.update(ROOM_ID, TEMPLATE_ID, account, request);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(templateService).updateTemplateName(TEMPLATE_ID, request);
+            verify(templateService).updateTemplateName(ROOM_ID, TEMPLATE_ID, request, account);
             verifyNoMoreInteractions(templateService);
         }
     }
 
     @Nested
-    @DisplayName("DELETE /{templateId}")
+    @DisplayName("DELETE /{roomId}/{templateId}")
     class Delete {
 
         @Test
-        @DisplayName("returns 204 and deletes by id")
+        @DisplayName("returns 204 and deletes within the room from the path")
         void returnsNoContent() {
-            ResponseEntity<Void> response = controller.delete(TEMPLATE_ID);
+            Account account = mock(Account.class);
+
+            ResponseEntity<Void> response = controller.delete(ROOM_ID, TEMPLATE_ID, account);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
-            verify(templateService).deleteTemplate(TEMPLATE_ID);
+            verify(templateService).deleteTemplate(ROOM_ID, TEMPLATE_ID, account);
         }
     }
 }

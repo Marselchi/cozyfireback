@@ -53,6 +53,8 @@ class RoomControllerTest {
     private LoreImportService loreImportService;
     @Mock
     private LoreExportService loreExportService;
+    @Mock
+    private RoomSecurityService roomSecurityService;
 
     @InjectMocks
     private RoomController controller;
@@ -132,11 +134,12 @@ class RoomControllerTest {
     class ImportLore {
 
         @Test
-        @DisplayName("routes a md file to the markdown importer")
+        @DisplayName("routes a md file to the markdown importer when creator")
         void markdown() {
             MultipartFile file = mock(MultipartFile.class);
             Account account = mock(Account.class);
             LoreImportRequest filters = new LoreImportRequest("md", false, false, false);
+            when(roomSecurityService.isCreator(account)).thenReturn(true);
 
             ResponseEntity<Void> response = controller.importLore(ROOM_ID, file, filters, account);
 
@@ -145,11 +148,12 @@ class RoomControllerTest {
         }
 
         @Test
-        @DisplayName("routes a zip file to the archive importer")
+        @DisplayName("routes a zip file to the archive importer when creator")
         void zip() {
             MultipartFile file = mock(MultipartFile.class);
             Account account = mock(Account.class);
             LoreImportRequest filters = new LoreImportRequest("ZIP", false, false, false);
+            when(roomSecurityService.isCreator(account)).thenReturn(true);
 
             ResponseEntity<Void> response = controller.importLore(ROOM_ID, file, filters, account);
 
@@ -158,14 +162,28 @@ class RoomControllerTest {
         }
 
         @Test
-        @DisplayName("rejects an unsupported filetype")
+        @DisplayName("rejects an unsupported filetype when creator")
         void unsupported() {
             MultipartFile file = mock(MultipartFile.class);
             Account account = mock(Account.class);
             LoreImportRequest filters = new LoreImportRequest("pdf", false, false, false);
+            when(roomSecurityService.isCreator(account)).thenReturn(true);
 
             assertThatThrownBy(() -> controller.importLore(ROOM_ID, file, filters, account))
                     .isInstanceOf(IllegalArgumentException.class);
+            verifyNoInteractions(loreImportService);
+        }
+
+        @Test
+        @DisplayName("throws ForbiddenException when caller is not room creator")
+        void forbiddenWhenNotCreator() {
+            MultipartFile file = mock(MultipartFile.class);
+            Account account = mock(Account.class);
+            LoreImportRequest filters = new LoreImportRequest("md", false, false, false);
+            when(roomSecurityService.isCreator(account)).thenReturn(false);
+
+            assertThatThrownBy(() -> controller.importLore(ROOM_ID, file, filters, account))
+                    .isInstanceOf(com.cozyfireplace.server.util.exception.ForbiddenException.class);
             verifyNoInteractions(loreImportService);
         }
     }

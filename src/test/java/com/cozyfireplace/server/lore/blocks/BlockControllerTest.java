@@ -90,36 +90,36 @@ class BlockControllerTest {
         }
 
         @Test
-        @DisplayName("POST /access/{recordId}/reset delegates the reset and returns 200")
+        @DisplayName("POST /{roomId}/access/{recordId}/reset delegates the reset and returns 200")
         void resetAccess() {
             AccessRecordResponse body = mock(AccessRecordResponse.class);
-            when(blockService.resetAccess(RECORD_ID)).thenReturn(body);
+            when(blockService.resetAccess(ROOM_ID, RECORD_ID)).thenReturn(body);
 
-            ResponseEntity<AccessRecordResponse> response = controller.resetAccess(RECORD_ID);
+            ResponseEntity<AccessRecordResponse> response = controller.resetAccess(ROOM_ID, RECORD_ID);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertSame(body, response.getBody());
         }
 
         @Test
-        @DisplayName("POST /access/{recordId}/grant delegates the grant and returns 200")
+        @DisplayName("POST /{roomId}/access/{recordId}/grant delegates the grant and returns 200")
         void grantAccess() {
             AccessRecordResponse body = mock(AccessRecordResponse.class);
-            when(blockService.grantAccess(RECORD_ID)).thenReturn(body);
+            when(blockService.grantAccess(ROOM_ID, RECORD_ID)).thenReturn(body);
 
-            ResponseEntity<AccessRecordResponse> response = controller.grantAccess(RECORD_ID);
+            ResponseEntity<AccessRecordResponse> response = controller.grantAccess(ROOM_ID, RECORD_ID);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertSame(body, response.getBody());
         }
 
         @Test
-        @DisplayName("POST /access/{recordId}/deny delegates the denial and returns 200")
+        @DisplayName("POST /{roomId}/access/{recordId}/deny delegates the denial and returns 200")
         void denyAccess() {
             AccessRecordResponse body = mock(AccessRecordResponse.class);
-            when(blockService.denyAccess(RECORD_ID)).thenReturn(body);
+            when(blockService.denyAccess(ROOM_ID, RECORD_ID)).thenReturn(body);
 
-            ResponseEntity<AccessRecordResponse> response = controller.denyAccess(RECORD_ID);
+            ResponseEntity<AccessRecordResponse> response = controller.denyAccess(ROOM_ID, RECORD_ID);
 
             assertEquals(HttpStatus.OK, response.getStatusCode());
             assertSame(body, response.getBody());
@@ -164,28 +164,28 @@ class BlockControllerTest {
     void roll() {
         Account account = account();
         RollResultResponse body = mock(RollResultResponse.class);
-        when(blockService.roll(BLOCK_ID, account)).thenReturn(body);
+        when(blockService.roll(ROOM_ID, BLOCK_ID, account)).thenReturn(body);
 
-        ResponseEntity<RollResultResponse> response = controller.roll(BLOCK_ID, account, ROOM_ID);
+        ResponseEntity<RollResultResponse> response = controller.roll(ROOM_ID, BLOCK_ID, account);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(body, response.getBody());
-        verify(blockService).roll(BLOCK_ID, account);
+        verify(blockService).roll(ROOM_ID, BLOCK_ID, account);
     }
 
     // ================= chance config =================
 
     @Test
-    @DisplayName("PATCH /{blockId}/chance forwards the new skill/threshold pair")
+    @DisplayName("PATCH /{roomId}/{blockId}/chance forwards the new skill/threshold pair")
     void updateChanceConfig() {
         ChanceConfigRequest request = ChanceConfigRequest.builder().skill("perception").threshold(15).build();
         ChanceConfigResponse body = mock(ChanceConfigResponse.class);
-        when(blockService.updateChanceConfig(BLOCK_ID, request)).thenReturn(body);
+        when(blockService.updateChanceConfig(ROOM_ID, BLOCK_ID, request)).thenReturn(body);
 
-        ResponseEntity<ChanceConfigResponse> response = controller.updateChanceConfig(BLOCK_ID, request);
+        ResponseEntity<ChanceConfigResponse> response = controller.updateChanceConfig(ROOM_ID, BLOCK_ID, request);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertSame(body, response.getBody());
-        verify(blockService).updateChanceConfig(BLOCK_ID, request);
+        verify(blockService).updateChanceConfig(ROOM_ID, BLOCK_ID, request);
     }
 }

@@ -23,11 +23,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * (creating the same name twice in one room is a 409, in two different rooms it is fine),
  * and unknown rooms/roles answer 404 via {@code NotFoundException}.</p>
  *
- * <p><b>Documented gap:</b> these endpoints perform no membership check — any
- * authenticated account may manage roles of any room (only the repository-level
- * room uniqueness is enforced). The DTOs carry no bean validation either
- * ({@code RoleCreateRequest}/{@code RoleUpdateRequest} are plain holders), so blank
- * names are accepted by the API and only stopped by the database when nullable.</p>
+ * <p><b>Room scoping and permissions:</b> every {@code {roomId}/{roleId}} endpoint resolves
+ * the role with {@code findByIdAndRoomId} first, so a role belonging to another room is a
+ * 404 rather than a silent write into someone else's room; create / update / delete are then
+ * gated on {@code RoomSecurityService#isCreator(roomId)} → 403 for a plain member, and 403
+ * for a profile without any account in the room (the resolver's {@code AccessDeniedException}
+ * is mapped by {@code GlobalExceptionHandler}). Reads ({@code /all}, {@code /allEdit},
+ * {@code /{roomId}/{roleId}}) stay open to every room member.</p>
+ *
+ * <p>The DTOs carry no bean validation ({@code RoleCreateRequest}/{@code RoleUpdateRequest}
+ * are plain holders), so blank names are accepted by the API and only stopped by the database
+ * when nullable.</p>
  */
 @DisplayName("RoleIT — /api/v1/roles")
 class RoleIT extends BaseIntegrationTest {
@@ -79,7 +85,8 @@ class RoleIT extends BaseIntegrationTest {
         @DisplayName("same name in a different room is allowed (uniqueness is per room)")
         void create_sameNameOtherRoom_isAllowed() throws Exception {
             newRole(room, "Guard");
-            Room otherRoom = newRoom("Other Role Room");
+            // dm must be the creator of the second room too, otherwise the creator gate fires first
+            Room otherRoom = newRoomOwnedBy(dm, "Other Role Room");
 
             mockMvc.perform(post("/api/v1/roles/{roomId}", otherRoom.getId())
                             .contentType(MediaType.APPLICATION_JSON)
@@ -94,6 +101,33 @@ class RoleIT extends BaseIntegrationTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(roleBody("Nobody's role")))
                     .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("room member who is not the creator → 403 (role management is creator-only)")
+        void create_byMember_returns403() throws Exception {
+            Profile player = newProfile("player");
+            newAccount(player, room, "Player One");
+
+            authenticateAs(player);
+            mockMvc.perform(post("/api/v1/roles/{roomId}", room.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(roleBody("Self-made")))
+                    .andExpect(status().isForbidden());
+
+            assertThat(roleRepository.findAll().stream()
+                    .filter(r -> "Self-made".equals(r.getName()))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("profile without an account in the room → 403 (resolver AccessDeniedException)")
+        void create_byStranger_returns403() throws Exception {
+            authenticateAs(newProfile("stranger"));
+
+            mockMvc.perform(post("/api/v1/roles/{roomId}", room.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(roleBody("Intruder")))
+                    .andExpect(status().isForbidden());
         }
 
         @Test
@@ -132,6 +166,36 @@ class RoleIT extends BaseIntegrationTest {
                             .content(roleBody("Ghost")))
                     .andExpect(status().isNotFound());
         }
+
+        @Test
+        @DisplayName("a role from another room → 404 and keeps its name (no cross-room rename)")
+        void update_otherRoomRole_returns404() throws Exception {
+            Room otherRoom = newRoomOwnedBy(dm, "Other Role Room");
+            Role foreign = newRole(otherRoom, "Foreign guard");
+
+            mockMvc.perform(put("/api/v1/roles/{roomId}/{roleId}", room.getId(), foreign.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(roleBody("Stolen")))
+                    .andExpect(status().isNotFound());
+
+            assertThat(roleRepository.findById(foreign.getId()).orElseThrow().getName()).isEqualTo("Foreign guard");
+        }
+
+        @Test
+        @DisplayName("room member who is not the creator → 403")
+        void update_byMember_returns403() throws Exception {
+            Role role = newRole(room, "Guard");
+            Profile player = newProfile("player");
+            newAccount(player, room, "Player One");
+
+            authenticateAs(player);
+            mockMvc.perform(put("/api/v1/roles/{roomId}/{roleId}", room.getId(), role.getId())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(roleBody("Renamed by member")))
+                    .andExpect(status().isForbidden());
+
+            assertThat(roleRepository.findById(role.getId()).orElseThrow().getName()).isEqualTo("Guard");
+        }
     }
 
     @Nested
@@ -150,11 +214,36 @@ class RoleIT extends BaseIntegrationTest {
         }
 
         @Test
-        @DisplayName("unknown role id → 204 (deleteById is lenient, service skips the existence check)")
-        void delete_unknownId_isSilentlyIgnored() throws Exception {
+        @DisplayName("unknown role id → 404 (the delete resolves the role inside the path room)")
+        void delete_unknownId_returns404() throws Exception {
             mockMvc.perform(delete("/api/v1/roles/{roomId}/{roleId}", room.getId(), 9999999L))
-                    // Pinned current behaviour: RoleService#deleteRole never verifies existence.
-                    .andExpect(status().isNoContent());
+                    .andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("a role from another room → 404 and survives (no cross-room delete)")
+        void delete_otherRoomRole_returns404() throws Exception {
+            Room otherRoom = newRoomOwnedBy(dm, "Other Role Room");
+            Role foreign = newRole(otherRoom, "Foreign guard");
+
+            mockMvc.perform(delete("/api/v1/roles/{roomId}/{roleId}", room.getId(), foreign.getId()))
+                    .andExpect(status().isNotFound());
+
+            assertThat(roleRepository.findById(foreign.getId())).isPresent();
+        }
+
+        @Test
+        @DisplayName("room member who is not the creator → 403 and the role survives")
+        void delete_byMember_returns403() throws Exception {
+            Role role = newRole(room, "Guard");
+            Profile player = newProfile("player");
+            newAccount(player, room, "Player One");
+
+            authenticateAs(player);
+            mockMvc.perform(delete("/api/v1/roles/{roomId}/{roleId}", room.getId(), role.getId()))
+                    .andExpect(status().isForbidden());
+
+            assertThat(roleRepository.findById(role.getId())).isPresent();
         }
     }
 
