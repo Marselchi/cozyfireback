@@ -59,7 +59,7 @@ public class AccountCharController {
             description = "Creates a new character for the authenticated account in the room and returns it with its location header.",
             responses = {
                     @ApiResponse(responseCode = "201", description = "Character created"),
-                    @ApiResponse(responseCode = "404", description = "Room not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: the account does not belong to this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -97,10 +97,12 @@ public class AccountCharController {
 
     @Operation(
             summary = "Update a character",
-            description = "Applies a partial (PATCH) update to the character's details, stats and skills.",
+            description = "Applies a partial (PATCH) update to the character's details, stats and skills. "
+                    + "Only the character's owner or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Character updated"),
-                    @ApiResponse(responseCode = "404", description = "Character not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: not the character's owner", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Character not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -120,12 +122,11 @@ public class AccountCharController {
             ))
     )
     @PatchMapping("/{roomId}/{characterId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<CharacterResponse> updateCharacter(
-            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable String roomId,
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the character", required = true, example = "10") @PathVariable Long characterId,
             @RequestBody CharacterUpdateRequest request,
             @Parameter(hidden = true) @CurrentAccount Account account) {
-        return ResponseEntity.ok(accountCharService.updateCharacter(characterId, request, account));
+        return ResponseEntity.ok(accountCharService.updateCharacter(roomId, characterId, request, account));
     }
 }

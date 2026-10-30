@@ -63,10 +63,10 @@ public class TemplateController {
 
     @Operation(
             summary = "Create a template",
-            description = "Creates a new template authored by the authenticated account.",
+            description = "Creates a new template authored by the authenticated account. The room in the path scopes which account is used as the author.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Created"),
-                    @ApiResponse(responseCode = "404", description = "Author not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: the account does not belong to this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -86,16 +86,17 @@ public class TemplateController {
             @Parameter(hidden = true) @CurrentAccount Account account,
             @Valid @RequestBody TemplateCreateRequest request
     ) {
-        templateService.createTemplate(request, account.getId());
+        templateService.createTemplate(request, account);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
             summary = "Update a template name",
-            description = "Updates the name of a template.",
+            description = "Updates the name of a template. Only the template's author or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Updated"),
-                    @ApiResponse(responseCode = "404", description = "Template not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: neither the author nor the room creator", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Template not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -104,30 +105,37 @@ public class TemplateController {
                     { "name": "NPC - Friendly Shopkeeper" }
                     """))
     )
-    @PutMapping("/{templateId}")
+    @PutMapping("/{roomId}/{templateId}")
     public ResponseEntity<Void> update(
+            @Parameter(description = "ID of the room", required = true, example = "1")
+            @PathVariable Long roomId,
             @Parameter(description = "ID of the template", required = true, example = "2")
             @PathVariable Long templateId,
+            @Parameter(hidden = true) @CurrentAccount Account account,
             @Valid @RequestBody TemplateUpdateRequest request
     ) {
-        templateService.updateTemplateName(templateId, request);
+        templateService.updateTemplateName(roomId, templateId, request, account);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
             summary = "Delete a template",
-            description = "Deletes a template by its ID.",
+            description = "Deletes a template. Only the template's author or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Deleted"),
-                    @ApiResponse(responseCode = "404", description = "Template not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: neither the author nor the room creator", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Template not found in this room", content = @Content)
             }
     )
-    @DeleteMapping("/{templateId}")
+    @DeleteMapping("/{roomId}/{templateId}")
     public ResponseEntity<Void> delete(
+            @Parameter(description = "ID of the room", required = true, example = "1")
+            @PathVariable Long roomId,
             @Parameter(description = "ID of the template", required = true, example = "2")
-            @PathVariable Long templateId
+            @PathVariable Long templateId,
+            @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        templateService.deleteTemplate(templateId);
+        templateService.deleteTemplate(roomId, templateId, account);
         return ResponseEntity.noContent().build();
     }
 }

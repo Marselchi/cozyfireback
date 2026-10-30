@@ -68,7 +68,8 @@ public class CharacterController {
             description = "Updates a character. Partial (PATCH) updates are supported.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Updated"),
-                    @ApiResponse(responseCode = "404", description = "Character/role not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only author or room creator can modify character", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Character/role not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -88,23 +89,26 @@ public class CharacterController {
             @Valid @RequestBody CharacterRequest request,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        characterService.updateCharacter(characterId, request, account, roomId);
+        characterService.updateCharacter(roomId, characterId, request, account);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
-            summary = "Delete a character",
-            description = "Deletes a character.",
+            summary = "Delete a character in room",
+            description = "Deletes a character in a room by its ID.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Deleted"),
-                    @ApiResponse(responseCode = "404", description = "Character not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only author or room creator can modify character", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Character not found in this room", content = @Content)
             }
     )
-    @DeleteMapping("/{characterId}")
-    public ResponseEntity<Void> delete(
-            @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId
+    @DeleteMapping("/{roomId}/{characterId}")
+    public ResponseEntity<Void> deleteInRoom(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId,
+            @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        characterService.deleteCharacter(characterId);
+        characterService.deleteCharacter(roomId, characterId, account);
         return ResponseEntity.noContent().build();
     }
 
@@ -131,6 +135,7 @@ public class CharacterController {
             description = "Returns a CharacterResponse (including roles).",
             responses = {
                     @ApiResponse(responseCode = "200", description = "OK"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only author or room creator can edit character", content = @Content),
                     @ApiResponse(responseCode = "404", description = "Character not found or no access", content = @Content)
             }
     )
@@ -144,20 +149,20 @@ public class CharacterController {
     }
 
     @Operation(
-            summary = "Get a character for user viewing (inline)",
-            description = "Returns a CharacterUserResponse with lore excerpts referenced from the character's content.",
+            summary = "Get a character for user viewing",
+            description = "Returns a CharacterUserResponse (no restricted-block leakage; includes isAuthor flag and unanswered question count).",
             responses = {
                     @ApiResponse(responseCode = "200", description = "OK"),
                     @ApiResponse(responseCode = "404", description = "Character not found or no access", content = @Content)
             }
     )
-    @GetMapping("/{roomId}/{characterId}/viewInline")
-    public ResponseEntity<CharacterUserResponse> getForUserInline(
+    @GetMapping("/{roomId}/{characterId}/view")
+    public ResponseEntity<CharacterUserResponse> getForUser(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the character", required = true, example = "15") @PathVariable Long characterId,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        CharacterUserResponse response = characterService.getCharacterForUserInline(roomId, characterId, account);
+        CharacterUserResponse response = characterService.getCharacterForUser(roomId, characterId, account);
         return ResponseEntity.ok(response);
     }
 }

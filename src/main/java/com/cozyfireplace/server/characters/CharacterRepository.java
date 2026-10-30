@@ -134,6 +134,17 @@ public interface CharacterRepository extends JpaRepository<Character, Long> {
     Optional<CharacterSummaryRow> findSummaryByIdAndRoomId(@Param("roomId") Long roomId,
                                                            @Param("characterId") Long characterId);
 
+    // Сущность character строго в пределах комнаты: чужой characterId даёт пустой результат (404),
+    // а не тихую запись/удаление в чужой комнате.
+    @Query("""
+        select c from Character c
+        join c.account a
+        join a.room r
+        where r.id = :roomId and c.id = :characterId
+    """)
+    Optional<Character> findByRoomIdAndId(@Param("roomId") Long roomId,
+                                          @Param("characterId") Long characterId);
+
     // ====== 3) Batch rows for roles ======
     interface CharacterRoleRow {
         Long getCharacterId();

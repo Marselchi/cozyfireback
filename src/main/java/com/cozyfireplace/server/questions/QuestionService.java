@@ -16,7 +16,9 @@ import com.cozyfireplace.server.notifications.event.OperationType;
 import com.cozyfireplace.server.notifications.event.QAEvent;
 import com.cozyfireplace.server.questions.dto.*;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
@@ -41,6 +43,7 @@ public class QuestionService {
     private final QuestionMapper questionMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final RoomRepository roomRepository;
+    private final RoomSecurityService roomSecurityService;
     private final AnswerRepository answerRepository;
     private final AnswerMapper answerMapper;
 
@@ -52,13 +55,15 @@ public class QuestionService {
 
         Lore lore = null;
         if (request.loreId() != null) {
-            lore = loreRepository.findById(request.loreId())
+            // Ссылки проверяются на принадлежность той же комнате, иначе в вопрос
+            // можно подставить lore/character из чужой комнаты.
+            lore = loreRepository.findByRoomIdAndId(roomId, request.loreId())
                     .orElseThrow(() -> new NotFoundException("Lore", request.loreId()));
         }
 
         Character character = null;
         if (request.characterId() != null) {
-            character = characterRepository.findById(request.characterId())
+            character = characterRepository.findByRoomIdAndId(roomId, request.characterId())
                     .orElseThrow(() -> new NotFoundException("Character", request.characterId()));
         }
         RoomTextResponse room = roomRepository.findRoomUrlById(roomId)
@@ -93,9 +98,9 @@ public class QuestionService {
      * Обновление вопроса
      */
     @Transactional
-    public QuestionResponse updateQuestion(Long id, QuestionUpdateRequest request) {
-        Question question = questionRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Question", id));
+    public QuestionResponse updateQuestion(Long roomId, Long id, QuestionUpdateRequest request, Account account) {
+        Question question = findInRoom(roomId, id);
+        checkEditPermission(question, account, "update");
 
         questionMapper.updateQuestionFromDto(request, question);
         Question updated = questionRepository.save(question);
@@ -106,27 +111,43 @@ public class QuestionService {
      * Удаление вопроса
      */
     @Transactional
-    public void deleteQuestion(Long id) {
-        if (!questionRepository.existsById(id)) {
-            throw new NotFoundException("Question", id);
+    public void deleteQuestion(Long roomId, Long id, Account account) {
+        Question question = findInRoom(roomId, id);
+        checkEditPermission(question, account, "delete");
+        questionRepository.delete(question);
+    }
+
+    private Question findInRoom(Long roomId, Long questionId) {
+        return questionRepository.findByRoomIdAndId(roomId, questionId)
+                .orElseThrow(() -> new NotFoundException("Question", questionId));
+    }
+
+    /**
+     * Комната уже проверена запросом ({@code findByRoomIdAndId}), а аккаунт гарантирован
+     * {@code @CurrentAccount}, поэтому остаётся проверить только авторство либо права создателя комнаты.
+     */
+    private void checkEditPermission(Question question, Account account, String action) {
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = question.getAuthor() != null && Objects.equals(question.getAuthor().getId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can " + action + " question");
         }
-        questionRepository.deleteById(id);
     }
 
     /**
      * Получение вопроса по ID с ответами первого уровня
      */
     @Transactional(readOnly = true)
-    public QuestionResponse getQuestionWithReplies(Long id) {
-        Question question = questionRepository.findByIdWithAnswersAndAuthor(id)
+    public QuestionResponse getQuestionWithReplies(Long roomId, Long id) {
+        Question question = questionRepository.findByIdWithAnswersAndAuthor(id, roomId)
                 .orElseThrow(() -> new NotFoundException("Question", id));
         return questionMapper.toQuestionResponse(question);
     }
 
     @Transactional(readOnly = true)
-    public QuestionDetailResponse getQuestionById(Long questionId, Long answerId) {
+    public QuestionDetailResponse getQuestionById(Long roomId, Long questionId, Long answerId) {
 
-        Question question = questionRepository.findByIdWithAuthor(questionId)
+        Question question = questionRepository.findByIdWithAuthor(questionId, roomId)
                 .orElseThrow(() -> new NotFoundException("Question", questionId));
 
         List<AnswerWithRepliesResponse> rootAnswers = new ArrayList<>(answerRepository

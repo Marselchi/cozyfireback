@@ -1,6 +1,7 @@
 package com.cozyfireplace.server.lore;
 
 import com.cozyfireplace.server.accounts.Account;
+import com.cozyfireplace.server.lore.blocks.BlockService;
 import com.cozyfireplace.server.lore.dto.IdName;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
@@ -34,6 +35,7 @@ public class LoreExportService {
 
     private final LoreRepository loreRepository;
     private final RoomRepository roomRepository;
+    private final BlockService blockService;
 
     @Value("${app.domain:http://localhost:3000}")
     private String appDomain;
@@ -72,7 +74,7 @@ public class LoreExportService {
                 for (Lore lore : lores) {
                     String baseName = sanitizeFileName(lore.getTitle());
                     String fileName = getUniqueFileName(baseName + ".md", usedNames);
-                    String content = buildLoreContent(lore, tagsByLoreId.get(lore.getId()), filters);
+                    String content = buildLoreContent(lore, tagsByLoreId.get(lore.getId()), filters, account);
                     content = convertLinksToWiki(content, loreById);
 
                     ZipEntry entry = new ZipEntry(fileName);
@@ -107,7 +109,7 @@ public class LoreExportService {
         return allLore;
     }
 
-    private String buildLoreContent(Lore lore, List<IdName> tags, LoreExportRequest filters) {
+    private String buildLoreContent(Lore lore, List<IdName> tags, LoreExportRequest filters, Account account) {
         StringBuilder sb = new StringBuilder();
 
         if (filters.saveTags() && tags != null && !tags.isEmpty()) {
@@ -127,7 +129,7 @@ public class LoreExportService {
 
         sb.append("\n");
 
-        String content = lore.getContent();
+        String content = blockService.expandBlocks(lore.getContent(), account);
         sb.append(content);
 
         return sb.toString();

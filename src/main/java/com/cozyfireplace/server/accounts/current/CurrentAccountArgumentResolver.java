@@ -29,12 +29,11 @@ public class CurrentAccountArgumentResolver implements HandlerMethodArgumentReso
     }
 
     @Override
-    @Nullable
     public Object resolveArgument(
             @NonNull MethodParameter parameter,
-            @Nullable ModelAndViewContainer mavContainer,
+            ModelAndViewContainer mavContainer,
             @NonNull NativeWebRequest webRequest,
-            @Nullable WebDataBinderFactory binderFactory
+            WebDataBinderFactory binderFactory
     ) throws Exception {
         HttpServletRequest request = getNativeRequest(webRequest);
         Long roomId = extractRoomIdFromPath(request);

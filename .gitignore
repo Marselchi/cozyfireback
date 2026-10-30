@@ -33,4 +33,7 @@ build/
 .vscode/
 
 *.md
+!CHANGES.md
 *.env
+# Local dev-only compose override (publishes MinIO ports); must not run on the server
+docker-compose.override.yml

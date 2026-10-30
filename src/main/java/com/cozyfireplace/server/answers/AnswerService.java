@@ -10,6 +10,7 @@ import com.cozyfireplace.server.questions.QuestionRepository;
 import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
@@ -103,12 +105,12 @@ public class AnswerService {
     }
 
     /**
-     * Редактирование ответа (только контент)
+     * Редактирование ответа (только контент).
      */
     @Transactional
-    public AnswerResponse updateAnswer(Long id, AnswerUpdateRequest request) {
-        Answer answer = answerRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Answer", id));
+    public AnswerResponse updateAnswer(Long roomId, Long id, AnswerUpdateRequest request, Account account) {
+        Answer answer = findInRoom(roomId, id);
+        checkEditPermission(answer, account, "update");
 
         answer.setContent(request.content());
         Answer updated = answerRepository.save(answer);
@@ -122,11 +124,27 @@ public class AnswerService {
      * Удаление ответа (каскадно удаляет все дочерние ответы)
      */
     @Transactional
-    public void deleteAnswer(Long id) {
-        if (!answerRepository.existsById(id)) {
-            throw new NotFoundException("Answer", id);
+    public void deleteAnswer(Long roomId, Long id, Account account) {
+        Answer answer = findInRoom(roomId, id);
+        checkEditPermission(answer, account, "delete");
+        answerRepository.delete(answer);
+    }
+
+    private Answer findInRoom(Long roomId, Long answerId) {
+        return answerRepository.findByRoomIdAndId(roomId, answerId)
+                .orElseThrow(() -> new NotFoundException("Answer", answerId));
+    }
+
+    /**
+     * Комната уже проверена запросом ({@code findByRoomIdAndId}), а аккаунт гарантирован
+     * {@code @CurrentAccount}, поэтому остаётся проверить только авторство либо права создателя комнаты.
+     */
+    private void checkEditPermission(Answer answer, Account account, String action) {
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = answer.getAuthor() != null && Objects.equals(answer.getAuthor().getId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can " + action + " answer");
         }
-        answerRepository.deleteById(id);
     }
 
     /**

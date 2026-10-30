@@ -31,6 +31,7 @@ public class RoleController {
             description = "Creates a role in the room identified by roomId.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Created"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage roles", content = @Content),
                     @ApiResponse(responseCode = "404", description = "Room not found", content = @Content),
                     @ApiResponse(responseCode = "409", description = "Role already exists", content = @Content)
             }
@@ -56,7 +57,9 @@ public class RoleController {
             description = "Updates a role.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Updated"),
-                    @ApiResponse(responseCode = "404", description = "Role not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage roles", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Role not found in this room", content = @Content),
+                    @ApiResponse(responseCode = "409", description = "Role already exists", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -66,7 +69,6 @@ public class RoleController {
                     """))
     )
     @PutMapping("/{roomId}/{roleId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> update(
             @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
@@ -74,7 +76,7 @@ public class RoleController {
             @PathVariable Long roleId,
             @Valid @RequestBody RoleUpdateRequest request
     ) {
-        roleService.updateRole(roleId, request);
+        roleService.updateRole(roomId, roleId, request);
         return ResponseEntity.noContent().build();
     }
 
@@ -83,18 +85,18 @@ public class RoleController {
             description = "Deletes a role.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Deleted"),
-                    @ApiResponse(responseCode = "404", description = "Role not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage roles", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Role not found in this room", content = @Content)
             }
     )
     @DeleteMapping("/{roomId}/{roleId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<Void> delete(
             @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
             @Parameter(description = "ID of the role", required = true, example = "8")
             @PathVariable Long roleId
     ) {
-        roleService.deleteRole(roleId);
+        roleService.deleteRole(roomId, roleId);
         return ResponseEntity.noContent().build();
     }
 
@@ -104,18 +106,17 @@ public class RoleController {
             responses = {
                     @ApiResponse(responseCode = "200", description = "OK",
                             content = @Content(schema = @Schema(implementation = RoleResponse.class))),
-                    @ApiResponse(responseCode = "404", description = "Role not found", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Role not found in this room", content = @Content)
             }
     )
     @GetMapping("/{roomId}/{roleId}")
-    @SuppressWarnings("unused")
     public ResponseEntity<RoleResponse> getRole(
             @Parameter(description = "ID of the room", required = true, example = "1")
             @PathVariable Long roomId,
             @Parameter(description = "ID of the role", required = true, example = "8")
             @PathVariable Long roleId
     ) {
-        return ResponseEntity.ok(roleService.getRole(roleId));
+        return ResponseEntity.ok(roleService.getRole(roomId, roleId));
     }
 
     @Operation(

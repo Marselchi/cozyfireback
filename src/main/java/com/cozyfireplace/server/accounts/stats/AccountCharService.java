@@ -3,6 +3,8 @@ package com.cozyfireplace.server.accounts.stats;
 import com.cozyfireplace.server.accounts.Account;
 import com.cozyfireplace.server.accounts.AccountChar;
 import com.cozyfireplace.server.accounts.AccountRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.persistence.OptimisticLockException;
@@ -13,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -25,7 +28,12 @@ public class AccountCharService {
     private final StatRepository statRepository;
     private final SkillRepository skillRepository;
     private final AccountCharMapper accountCharMapper;
+    private final RoomSecurityService roomSecurityService;
 
+    /**
+     * Создание персонажа. Комната выводится из аккаунта: {@code @CurrentAccount} уже
+     * разрешён строго в комнате из пути, поэтому персонаж физически не может «уехать» в другую комнату.
+     */
     @Transactional
     public CharacterResponse createCharacter(CharacterCreateRequest request, Account account) {
         AccountChar character = AccountChar.builder()
@@ -50,9 +58,17 @@ public class AccountCharService {
     }
 
     @Transactional
-    public CharacterResponse updateCharacter(Long characterId, CharacterUpdateRequest request, Account account) {
-        AccountChar character = accountCharRepository.findByIdWithStatsAndSkills(characterId)
-                .orElseThrow(() -> new EntityNotFoundException("Character not found"));
+    public CharacterResponse updateCharacter(Long roomId, Long characterId, CharacterUpdateRequest request, Account account) {
+        // Персонаж ищется строго в комнате из пути, а права на него проверяются по аккаунту,
+        // разрешённому из этой же комнаты (@CurrentAccount).
+        AccountChar character = accountCharRepository.findByIdWithStatsAndSkillsInRoom(characterId, roomId)
+                .orElseThrow(() -> new NotFoundException("AccountChar", characterId));
+
+        Long ownCharId = account.getAccountChar() != null ? account.getAccountChar().getId() : null;
+        boolean isOwner = Objects.equals(ownCharId, character.getId());
+        if (!isOwner && !roomSecurityService.isCreator(account)) {
+            throw new ForbiddenException("Обновление персонажа", "только владелец персонажа или создатель комнаты может его обновлять");
+        }
 
         if (request.getVersion() != null && !request.getVersion().equals(character.getVersion())) {
             throw new OptimisticLockException("Character was modified by another client");

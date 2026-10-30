@@ -77,10 +77,11 @@ public class AnswerController {
 
     @Operation(
             summary = "Update an answer",
-            description = "Edits the content of an existing answer.",
+            description = "Edits the content of an existing answer. Only the answer's author or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Answer updated"),
-                    @ApiResponse(responseCode = "404", description = "Answer not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: neither the author nor the room creator", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Answer not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -89,27 +90,32 @@ public class AnswerController {
                     { "content": "The gate was barred from within, we later realized." }
                     """))
     )
-    @PutMapping("/{id}")
+    @PutMapping("/{roomId}/{id}")
     public ResponseEntity<AnswerResponse> updateAnswer(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the answer", required = true, example = "100") @PathVariable Long id,
-            @Valid @RequestBody AnswerUpdateRequest request
+            @Valid @RequestBody AnswerUpdateRequest request,
+            @Parameter(hidden = true) @CurrentAccount Account currentAccount
     ) {
-        AnswerResponse response = answerService.updateAnswer(id, request);
+        AnswerResponse response = answerService.updateAnswer(roomId, id, request, currentAccount);
         return ResponseEntity.ok(response);
     }
 
     @Operation(
             summary = "Delete an answer",
-            description = "Deletes an answer and cascade-deletes all of its child answers.",
+            description = "Deletes an answer and cascade-deletes all of its child answers. Only the answer's author or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Answer deleted"),
-                    @ApiResponse(responseCode = "404", description = "Answer not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: neither the author nor the room creator", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Answer not found in this room", content = @Content)
             }
     )
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{roomId}/{id}")
     public ResponseEntity<Void> deleteAnswer(
-            @Parameter(description = "ID of the answer", required = true, example = "100") @PathVariable Long id) {
-        answerService.deleteAnswer(id);
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the answer", required = true, example = "100") @PathVariable Long id,
+            @Parameter(hidden = true) @CurrentAccount Account currentAccount) {
+        answerService.deleteAnswer(roomId, id, currentAccount);
         return ResponseEntity.noContent().build();
     }
 

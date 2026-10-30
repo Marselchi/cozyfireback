@@ -84,10 +84,11 @@ public class QuestionController {
 
     @Operation(
             summary = "Update a question",
-            description = "Updates a question's title, body and category by its ID.",
+            description = "Updates a question's title, body and category. Only the question's author or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Question updated"),
-                    @ApiResponse(responseCode = "404", description = "Question not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: neither the author nor the room creator", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Question not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -96,62 +97,65 @@ public class QuestionController {
                     { "title": "Who guards the north gate?", "body": "Updated details about the sentries.", "category": 3 }
                     """))
     )
-    @PutMapping("/{id}")
+    @PutMapping("/{roomId}/{id}")
     public ResponseEntity<QuestionResponse> updateQuestion(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the question", required = true, example = "7") @PathVariable Long id,
-            @Valid @RequestBody QuestionUpdateRequest request
+            @Valid @RequestBody QuestionUpdateRequest request,
+            @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        QuestionResponse response = questionService.updateQuestion(id, request);
+        QuestionResponse response = questionService.updateQuestion(roomId, id, request, account);
         return ResponseEntity.ok(response);
     }
 
     @Operation(
             summary = "Delete a question",
-            description = "Deletes a question by its ID.",
+            description = "Deletes a question. Only the question's author or the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Question deleted"),
-                    @ApiResponse(responseCode = "404", description = "Question not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: neither the author nor the room creator", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Question not found in this room", content = @Content)
             }
     )
-    @DeleteMapping("/{id}")
+    @DeleteMapping("/{roomId}/{id}")
     public ResponseEntity<Void> deleteQuestion(
-            @Parameter(description = "ID of the question", required = true, example = "7") @PathVariable Long id) {
-        questionService.deleteQuestion(id);
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the question", required = true, example = "7") @PathVariable Long id,
+            @Parameter(hidden = true) @CurrentAccount Account account) {
+        questionService.deleteQuestion(roomId, id, account);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
             summary = "Get a question with first-level answers",
-            description = "Returns a question by its ID together with its first-level answers.",
+            description = "Returns a question in the room together with its first-level answers.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Question returned"),
-                    @ApiResponse(responseCode = "404", description = "Question not found", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Question not found in this room", content = @Content)
             }
     )
     @GetMapping("/{roomId}/{id}")
-    @SuppressWarnings("unused")
     public ResponseEntity<QuestionResponse> getQuestion(
             @Parameter(description = "ID of the question", required = true, example = "7") @PathVariable Long id,
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId) {
-        QuestionResponse response = questionService.getQuestionWithReplies(id);
+        QuestionResponse response = questionService.getQuestionWithReplies(roomId, id);
         return ResponseEntity.ok(response);
     }
 
     @Operation(
             summary = "Get a single question detail",
-            description = "Returns detailed information for one question, optionally scoped to a specific answer thread.",
+            description = "Returns detailed information for one question in the room, optionally scoped to a specific answer thread.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Question detail returned"),
-                    @ApiResponse(responseCode = "404", description = "Question not found", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Question not found in this room", content = @Content)
             }
     )
     @GetMapping("/{roomId}/{id}/single")
-    @SuppressWarnings("unused")
     public ResponseEntity<QuestionDetailResponse> getQuestionById(
             @Parameter(description = "ID of the question", required = true, example = "7") @PathVariable Long id,
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "Optional answer ID to focus the thread on") @RequestParam(required = false) Long answerId) {
-        return ResponseEntity.ok(questionService.getQuestionById(id, answerId));
+        return ResponseEntity.ok(questionService.getQuestionById(roomId, id, answerId));
     }
 
     @Operation(

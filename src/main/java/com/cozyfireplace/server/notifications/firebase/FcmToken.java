@@ -23,8 +23,10 @@ public class FcmToken {
     @JoinColumn(name = "profile_id", nullable = false)
     private Profile profile;
 
+    // Firebase Installation ID (FID). FCM is moving off registration tokens; this column
+    // previously stored the device registration token and is now the FID (see CLIENT.md).
     @Column(nullable = false, unique = true, columnDefinition = "TEXT")
-    private String token;
+    private String fid;
 
     private boolean active;
 

@@ -1,0 +1,20 @@
+databaseChangeLog:
+
+  # FCM is transitioning from registration tokens to Firebase Installation IDs (FIDs).
+  # The fcm_tokens.token column now stores a Firebase Installation ID, so it is renamed to `fid`.
+  - changeSet:
+      id: 1791100000000-1
+      author: Марсель
+      objectQuotingStrategy: QUOTE_ONLY_RESERVED_WORDS
+      changes:
+        - renameColumn:
+            columnDataType: TEXT
+            newColumnName: fid
+            oldColumnName: token
+            tableName: fcm_tokens
+      rollback:
+        - renameColumn:
+            columnDataType: TEXT
+            newColumnName: token
+            oldColumnName: fid
+            tableName: fcm_tokens

@@ -2,7 +2,6 @@ package com.cozyfireplace.server.characters.dto;
 
 import com.cozyfireplace.server.accounts.Account;
 import com.cozyfireplace.server.characters.Character;
-import com.cozyfireplace.server.lore.dto.ExcerptResponse;
 import com.cozyfireplace.server.lore.dto.IdName;
 import org.mapstruct.*;
 
@@ -28,25 +27,24 @@ public interface CharacterMapper {
     // Для редактирования: всё + roles
     @Mapping(target = "accountName", source = "s.accountName")
     @Mapping(target = "createdByRoomCreator", source = "s.createdByRoomCreator")
+    @Mapping(target = "content", source = "content")
     @Mapping(target = "roles", source = "roles")
-    CharacterResponse toEditResponse(CharacterSummaryRow s, List<IdName> roles);
+    CharacterResponse toEditResponse(CharacterSummaryRow s, String content, List<IdName> roles);
 
     // Для списка: без content, без roles — только основная информация
     @Mapping(target = "accountName", source = "s.accountName")
     @Mapping(target = "createdByRoomCreator", source = "s.createdByRoomCreator")
     CharacterListResponse toListResponse(CharacterSummaryRow s);
 
-    // Для просмотра пользователем с excerpts
+    // Для просмотра пользователем
     @Mapping(target = "isAuthor", source = "isAuthor")
     @Mapping(target = "accountName", source = "s.accountName")
     @Mapping(target = "createdByRoomCreator", source = "s.createdByRoomCreator")
     @Mapping(target = "roles", source = "roles")
-    @Mapping(target = "excerpts", source = "excerpts")
     @Mapping(target = "questionCount", source = "questionCount")
     CharacterUserResponse toUserResponse(CharacterSummaryRow s,
                                          String content,
                                          boolean isAuthor,
                                          List<IdName> roles,
-                                         List<ExcerptResponse> excerpts,
                                          long questionCount);
 }

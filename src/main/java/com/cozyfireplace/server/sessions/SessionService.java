@@ -16,6 +16,8 @@ import java.time.Instant;
 import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -37,12 +39,15 @@ public class SessionService {
             throw new ForbiddenException("Создание сессии", "только создатель комнаты может создавать сессии");
         }
 
-        // Валидация: аккаунты должны быть из той же комнаты
+        // Валидация: аккаунты должны существовать и быть из той же комнаты.
+        // Раньше несуществующий id просто терялся в findAllById и участие не создавалось.
         if (request.accountIds() != null && !request.accountIds().isEmpty()) {
-            List<Account> invitedAccounts = accountRepository.findAllById(request.accountIds());
-            for (Account invitedAccount : invitedAccounts) {
-                if (!invitedAccount.getRoom().getId().equals(roomId)) {
-                    throw new NotFoundException("Аккаунт", "id", invitedAccount.getId());
+            Set<Long> roomAccountIds = accountRepository.findAllByRoomId(roomId).stream()
+                    .map(Account::getId)
+                    .collect(Collectors.toSet());
+            for (Long invitedAccountId : request.accountIds()) {
+                if (!roomAccountIds.contains(invitedAccountId)) {
+                    throw new NotFoundException("Аккаунт", "id", invitedAccountId);
                 }
             }
         }
@@ -62,14 +67,12 @@ public class SessionService {
      * Обновить сессию
      */
     @Transactional
-    public SessionResponse updateSession(Long sessionId, SessionRequest request) {
-        Session session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new NotFoundException("Сессия", "id", sessionId));
+    public SessionResponse updateSession(Long roomId, Long sessionId, SessionRequest request) {
+        Session session = findInRoom(roomId, sessionId);
 
-        // Проверка: только создатель комнаты может обновлять сессии
-        if (!roomSecurityService.isCreator(session.getCreator().getRoom().getId())) {
-            throw new ForbiddenException("Обновление сессии", "только создатель комнаты может обновлять сессии");
-        }
+        // Проверка: только создатель комнаты может обновлять сессии.
+        // Права проверяются по комнате из пути, а не по комнате найденной сессии.
+        assertCreator(roomId, "Обновление сессии");
 
         session.setTime(request.time());
         session.setDescription(request.description());
@@ -89,16 +92,21 @@ public class SessionService {
      * Удалить сессию
      */
     @Transactional
-    public void deleteSession(Long sessionId) {
-        Session session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new NotFoundException("Сессия", "id", sessionId));
-
-        // Проверка: только создатель комнаты может удалять сессии
-        if (!roomSecurityService.isCreator(session.getCreator().getRoom().getId())) {
-            throw new ForbiddenException("Удаление сессии", "только создатель комнаты может удалять сессии");
-        }
-
+    public void deleteSession(Long roomId, Long sessionId) {
+        Session session = findInRoom(roomId, sessionId);
+        assertCreator(roomId, "Удаление сессии");
         sessionRepository.delete(session);
+    }
+
+    private Session findInRoom(Long roomId, Long sessionId) {
+        return sessionRepository.findByRoomIdAndId(roomId, sessionId)
+                .orElseThrow(() -> new NotFoundException("Сессия", "id", sessionId));
+    }
+
+    private void assertCreator(Long roomId, String action) {
+        if (!roomSecurityService.isCreator(roomId)) {
+            throw new ForbiddenException(action, "только создатель комнаты может управлять сессиями");
+        }
     }
 
     /**
@@ -168,9 +176,9 @@ public class SessionService {
      * Принять или отклонить приглашение
      */
     @Transactional
-    public void acknowledgeSession(Long sessionId, Account account, boolean accepted) {
-        Session session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new NotFoundException("Сессия", "id", sessionId));
+    public void acknowledgeSession(Long roomId, Long sessionId, Account account, boolean accepted) {
+        // Сессия берётся строго из комнаты из пути — чужой sessionId отвечает 404.
+        findInRoom(roomId, sessionId);
 
         // Проверка: только приглашенный может принять/отклонить приглашение
         Participation participation = participationService.findBySessionId(sessionId).stream()

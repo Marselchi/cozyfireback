@@ -6,8 +6,17 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 public interface SessionRepository extends JpaRepository<Session, Long> {
+
+    /**
+     * Найти сессию строго внутри комнаты.
+     * Комнаты у сессии нет — она берётся через создателя, поэтому чужой sessionId
+     * отвечает 404, а не правкой/удалением сессии из другой комнаты.
+     */
+    @Query("SELECT s FROM Session s JOIN s.creator c JOIN c.room r WHERE r.id = :roomId AND s.id = :sessionId")
+    Optional<Session> findByRoomIdAndId(@Param("roomId") Long roomId, @Param("sessionId") Long sessionId);
 
     /**
      * Найти все сессии комнаты за период

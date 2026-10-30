@@ -21,8 +21,8 @@ public class FcmTokenService {
     private final AccountRepository accountRepository;
 
     @Transactional
-    public void registerToken(String token) {
-        var existing = repository.findByToken(token);
+    public void registerFid(String fid) {
+        var existing = repository.findByFid(fid);
         Profile profile = profileService.getCurrentProfile();
         if (existing.isPresent()) {
             FcmToken t = existing.get();
@@ -34,7 +34,7 @@ public class FcmTokenService {
 
         repository.save(FcmToken.builder()
                 .profile(profile)
-                .token(token)
+                .fid(fid)
                 .active(true)
                 .createdAt(Instant.now())
                 .lastUsedAt(Instant.now())
@@ -42,16 +42,16 @@ public class FcmTokenService {
     }
 
     @Transactional
-    public void deactivateToken(String token) {
-        repository.findByToken(token).ifPresent(t -> {
+    public void deactivateFid(String fid) {
+        repository.findByFid(fid).ifPresent(t -> {
             t.setActive(false);
         });
     }
 
-    public List<String> getActiveTokens(Long accountId) {
+    public List<String> getActiveFids(Long accountId) {
         Long profileId = accountRepository.findProfileIdByAccountId(accountId)
                 .orElseThrow(() -> new NotFoundException("Account not found"));
 
-        return repository.findTokensByProfileIdAndActiveTrue(profileId);
+        return repository.findFidsByProfileIdAndActiveTrue(profileId);
     }
 }

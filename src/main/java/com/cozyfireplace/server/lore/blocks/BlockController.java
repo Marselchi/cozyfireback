@@ -104,56 +104,71 @@ public class BlockController {
             }
     )
     @PostMapping("/{roomId}/{blockId}/roll")
-    @SuppressWarnings("unused")
     public ResponseEntity<RollResultResponse> roll(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the block", required = true, example = "99") @PathVariable Long blockId,
-            @Parameter(hidden = true) @CurrentAccount Account account,
-            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId) {
-        return ResponseEntity.ok(blockService.roll(blockId, account));
+            @Parameter(hidden = true) @CurrentAccount Account account) {
+        return ResponseEntity.ok(blockService.roll(roomId, blockId, account));
     }
 
     @Operation(
             summary = "Reset an access record",
-            description = "Resets the roll/access state of an access record back to its initial value.",
-            responses = @ApiResponse(responseCode = "200", description = "Access record reset")
+            description = "Resets the roll/access state of an access record back to its initial value. Only the room creator may do it.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Access record reset"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage block access", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Access record not found in this room", content = @Content)
+            }
     )
-    @PostMapping("/access/{recordId}/reset")
+    @PostMapping("/{roomId}/access/{recordId}/reset")
     public ResponseEntity<AccessRecordResponse> resetAccess(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the access record", required = true, example = "31") @PathVariable Long recordId) {
-        return ResponseEntity.ok(blockService.resetAccess(recordId));
+        return ResponseEntity.ok(blockService.resetAccess(roomId, recordId));
     }
 
     @Operation(
             summary = "Grant access",
-            description = "Explicitly grants access to a block for the record's user.",
-            responses = @ApiResponse(responseCode = "200", description = "Access granted")
+            description = "Explicitly grants access to a block for the record's user. Only the room creator may do it.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Access granted"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage block access", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Access record not found in this room", content = @Content)
+            }
     )
-    @PostMapping("/access/{recordId}/grant")
+    @PostMapping("/{roomId}/access/{recordId}/grant")
     public ResponseEntity<AccessRecordResponse> grantAccess(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the access record", required = true, example = "31") @PathVariable Long recordId) {
-        return ResponseEntity.ok(blockService.grantAccess(recordId));
+        return ResponseEntity.ok(blockService.grantAccess(roomId, recordId));
     }
 
     @Operation(
             summary = "Deny access",
-            description = "Explicitly denies access to a block for the record's user.",
-            responses = @ApiResponse(responseCode = "200", description = "Access denied")
+            description = "Explicitly denies access to a block for the record's user. Only the room creator may do it.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "Access denied"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage block access", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Access record not found in this room", content = @Content)
+            }
     )
-    @PostMapping("/access/{recordId}/deny")
+    @PostMapping("/{roomId}/access/{recordId}/deny")
     public ResponseEntity<AccessRecordResponse> denyAccess(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the access record", required = true, example = "31") @PathVariable Long recordId) {
-        return ResponseEntity.ok(blockService.denyAccess(recordId));
+        return ResponseEntity.ok(blockService.denyAccess(roomId, recordId));
     }
 
     @Operation(
             summary = "Update a block's chance configuration",
-            description = "Changes the skill and difficulty threshold used when rolling a chance block.",
+            description = "Changes the skill and difficulty threshold used when rolling a chance block. Only the room creator may do it.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "Chance configuration updated",
                             content = @Content(examples = @ExampleObject(name = "ChanceConfig", value = """
                                     { "skill": "perception", "threshold": 15 }
                                     """))),
-                    @ApiResponse(responseCode = "404", description = "Block not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only the room creator may manage block access", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Block or skill not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -162,10 +177,11 @@ public class BlockController {
                     { "skill": "perception", "threshold": 15 }
                     """))
     )
-    @PatchMapping("/{blockId}/chance")
+    @PatchMapping("/{roomId}/{blockId}/chance")
     public ResponseEntity<ChanceConfigResponse> updateChanceConfig(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
             @Parameter(description = "ID of the block", required = true, example = "99") @PathVariable Long blockId,
             @RequestBody ChanceConfigRequest request) {
-        return ResponseEntity.ok(blockService.updateChanceConfig(blockId, request));
+        return ResponseEntity.ok(blockService.updateChanceConfig(roomId, blockId, request));
     }
 }

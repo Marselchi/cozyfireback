@@ -5,6 +5,7 @@ import com.cozyfireplace.server.lore.Lore;
 import com.cozyfireplace.server.lore.LoreRepository;
 import com.cozyfireplace.server.rooms.Room;
 import com.cozyfireplace.server.rooms.RoomRepository;
+import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.tags.dto.TagCreateRequest;
 import com.cozyfireplace.server.tags.dto.TagMapper;
 import com.cozyfireplace.server.tags.dto.TagResponse;
@@ -23,11 +24,14 @@ public class TagService {
     private final TagRepository tagRepository;
     private final RoomRepository roomRepository;
     private final LoreRepository loreRepository;
+    private final RoomSecurityService roomSecurityService;
     private final TagMapper tagMapper;
 
     public void createTag(Long roomId, TagCreateRequest request) {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new NotFoundException("Room", roomId));
+
+        assertCreator(roomId);
 
         if (tagRepository.existsByNameAndRoom(request.name(), room)) {
             throw new AlreadyExistsException(
@@ -43,28 +47,44 @@ public class TagService {
         );
     }
 
-    public void updateTag(Long tagId, TagUpdateRequest request) {
-        //TODO: check similar room from roomId and admin rights
-        //Too lazy rn
-        Tag tag = tagRepository.findById(tagId)
-                .orElseThrow(() -> new NotFoundException("Tag", tagId));
+    public void updateTag(Long roomId, Long tagId, TagUpdateRequest request) {
+        Tag tag = findInRoom(roomId, tagId);
+        assertCreator(roomId);
+
+        String newName = request.name();
+        if (newName != null && !newName.equals(tag.getName())
+                && tagRepository.existsByNameAndRoom(newName, tag.getRoom())) {
+            throw new AlreadyExistsException(
+                    "Tag '" + newName + "' already exists in room: " + tag.getRoom().getName()
+            );
+        }
+
         tagMapper.updateEntity(request, tag);
         tagRepository.save(tag);
     }
 
-    public void deleteTag(Long tagId) {
-
-        //TODO: some checks mb and deleting of role in lore
-
-        tagRepository.deleteById(tagId);
+    public void deleteTag(Long roomId, Long tagId) {
+        Tag tag = findInRoom(roomId, tagId);
+        assertCreator(roomId);
+        tagRepository.delete(tag);
     }
 
-    public TagResponse getTag(Long tagId) {
-        Tag tag = tagRepository.findById(tagId)
+    public TagResponse getTag(Long roomId, Long tagId) {
+        return tagMapper.toResponse(findInRoom(roomId, tagId));
+    }
+
+    /**
+     * Room-scoped загрузку тега: в чужой комнате тега не видно (404 вместо тихого изменения чужого тега).
+     */
+    private Tag findInRoom(Long roomId, Long tagId) {
+        return tagRepository.findByIdAndRoomId(tagId, roomId)
                 .orElseThrow(() -> new NotFoundException("Tag", tagId));
+    }
 
-        return tagMapper.toResponse(tag);
-
+    private void assertCreator(Long roomId) {
+        if (!roomSecurityService.isCreator(roomId)) {
+            throw new ForbiddenException("Управление тегами", "только создатель комнаты может управлять тегами");
+        }
     }
 
 
@@ -108,34 +128,37 @@ public class TagService {
     }
 
 
-    public Lore updateTagsLore(Lore lore, Set<Long> tagIds) {
-        List<Tag> tags = tagRepository.findAllById(tagIds);
-        if (tags.size() != tagIds.size()) {
-            Set<Long> foundIds = tags.stream().map(Tag::getId).collect(Collectors.toSet());
-            tagIds.stream()
-                    .filter(id -> !foundIds.contains(id))
-                    .findFirst()
-                    .ifPresent(missingId -> {
-                        throw new NotFoundException("Tag", missingId);
-                    });
-        }
+    public Lore updateTagsLore(Lore lore, Set<Long> tagIds, Long roomId) {
+        List<Tag> tags = requireAllInRoom(tagIds, roomId);
 
         lore.getTags().clear();
         lore.getTags().addAll(tags);
         return lore;
     }
 
-    public Set<Tag> resolveTags(List<Long> tagIds) {
+    /**
+     * Разрешает теги для payload'а lore строго внутри комнаты:
+     * чужой или несуществующий tagId отвечает 404 и не протаскивает тег из другой комнаты.
+     */
+    public Set<Tag> resolveTags(List<Long> tagIds, Long roomId) {
         if (tagIds == null || tagIds.isEmpty()) return Set.of();
+        return new HashSet<>(requireAllInRoom(tagIds, roomId));
+    }
 
-        List<Tag> tags = tagRepository.findAllById(tagIds);
-        if (tags.size() != tagIds.size()) {
-            Set<Long> foundIds = tags.stream().map(Tag::getId).collect(Collectors.toSet());
-            tagIds.stream()
+    private List<Tag> requireAllInRoom(Collection<Long> tagIds, Long roomId) {
+        if (tagIds == null || tagIds.isEmpty()) return List.of();
+
+        List<Long> requested = List.copyOf(tagIds);
+        List<Tag> found = tagRepository.findByIdInAndRoomId(requested, roomId);
+        if (found.size() != requested.size()) {
+            Set<Long> foundIds = found.stream().map(Tag::getId).collect(Collectors.toSet());
+            requested.stream()
                     .filter(id -> !foundIds.contains(id))
                     .findFirst()
-                    .ifPresent(missingId -> { throw new NotFoundException("Tag", missingId); });
+                    .ifPresent(missingId -> {
+                        throw new NotFoundException("Tag", missingId);
+                    });
         }
-        return new HashSet<>(tags);
+        return found;
     }
 }

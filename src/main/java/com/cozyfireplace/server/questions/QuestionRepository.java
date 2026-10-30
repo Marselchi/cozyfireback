@@ -52,11 +52,24 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
         LEFT JOIN FETCH a.replies r
         LEFT JOIN FETCH r.author
         WHERE q.id = :id
+          AND q.author.room.id = :roomId
     """)
-    Optional<Question> findByIdWithAnswersAndAuthor(@Param("id") Long id);
+    Optional<Question> findByIdWithAnswersAndAuthor(@Param("id") Long id,
+                                                   @Param("roomId") Long roomId);
 
     @Query("SELECT q.author.id FROM Question q WHERE q.id = :id")
     Optional<Long> findAuthorIdByQuestionId(@Param("id") Long id);
+
+    // Вопроса у комнаты нет — комната берётся через автора. Чужой questionId даёт пустой
+    // результат (404), а не правку/удаление вопроса из другой комнаты.
+    @Query("""
+        SELECT q FROM Question q
+        JOIN q.author acc
+        JOIN acc.room r
+        WHERE r.id = :roomId AND q.id = :questionId
+    """)
+    Optional<Question> findByRoomIdAndId(@Param("roomId") Long roomId,
+                                        @Param("questionId") Long questionId);
 
     @Query("""
         SELECT DISTINCT q.author FROM Question q
@@ -75,8 +88,10 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
     SELECT q FROM Question q
         LEFT JOIN FETCH q.author
         WHERE q.id = :id
+          AND q.author.room.id = :roomId
     """)
-    Optional<Question> findByIdWithAuthor(@Param("id") Long id);
+    Optional<Question> findByIdWithAuthor(@Param("id") Long id,
+                                         @Param("roomId") Long roomId);
 
     @Query("""
         SELECT COUNT(q) FROM Question q

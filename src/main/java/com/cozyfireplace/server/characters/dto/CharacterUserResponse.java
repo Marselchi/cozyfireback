@@ -1,6 +1,5 @@
 package com.cozyfireplace.server.characters.dto;
 
-import com.cozyfireplace.server.lore.dto.ExcerptResponse;
 import com.cozyfireplace.server.lore.dto.IdName;
 
 import java.util.List;
@@ -15,6 +14,5 @@ public record CharacterUserResponse(
         String accountName,
         boolean createdByRoomCreator,
         List<IdName> roles,
-        List<ExcerptResponse> excerpts,
         long questionCount
 ) {}

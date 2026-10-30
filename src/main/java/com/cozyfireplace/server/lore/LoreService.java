@@ -13,6 +13,7 @@ import com.cozyfireplace.server.rooms.RoomRepository;
 import com.cozyfireplace.server.rooms.RoomSecurityService;
 import com.cozyfireplace.server.rooms.dto.RoomTextResponse;
 import com.cozyfireplace.server.tags.TagService;
+import com.cozyfireplace.server.util.exception.ForbiddenException;
 import com.cozyfireplace.server.util.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,10 +54,10 @@ public class LoreService {
         boolean isCreator = roomSecurityService.isCreator(account);
 
         lore.setRoles(roleService.resolveRoles(
-                request.roleIds() == null ? List.of() : List.copyOf(request.roleIds())
+                request.roleIds() == null ? List.of() : List.copyOf(request.roleIds()), roomId
         ));
         lore.setTags(tagService.resolveTags(
-                request.tagIds() == null ? List.of() : List.copyOf(request.tagIds())
+                request.tagIds() == null ? List.of() : List.copyOf(request.tagIds()), roomId
         ));
 
         // Сначала сохраняем Lore, чтобы получить ID
@@ -88,14 +89,20 @@ public class LoreService {
     }
 
     @Transactional
-    public void updateLore(Long loreId, LoreRequest request, Account account, Long roomId) {
-        Lore lore = loreRepository.findById(loreId)
+    public void updateLore(Long roomId, Long loreId, LoreRequest request, Account account) {
+        Lore lore = loreRepository.findByRoomIdAndId(roomId, loreId)
                 .orElseThrow(() -> new NotFoundException("Lore", loreId));
         RoomTextResponse room = roomRepository.findRoomUrlById(roomId)
                 .orElseThrow(() -> new NotFoundException("Room", roomId));
 
-        lore = roleService.updateRolesLore(lore, request.roleIds());
-        lore = tagService.updateTagsLore(lore, request.tagIds());
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = lore.getAccount() != null && Objects.equals(lore.getAccount().getId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can update lore");
+        }
+
+        lore = roleService.updateRolesLore(lore, request.roleIds(), roomId);
+        lore = tagService.updateTagsLore(lore, request.tagIds(), roomId);
         loreMapper.updateEntity(request, lore);
 
         // Обработка блоков через BlockService
@@ -122,8 +129,23 @@ public class LoreService {
     }
 
     @Transactional
-    public void deleteLore(Long loreId) {
+    public void deleteLore(Long roomId, Long loreId, Account account) {
+        Lore lore = loreRepository.findByRoomIdAndId(roomId, loreId)
+                .orElseThrow(() -> new NotFoundException("Lore", loreId));
+        checkLoreEditPermission(lore, account);
         loreRepository.deleteById(loreId);
+    }
+
+    /**
+     * Комната уже проверена запросом ({@code findByRoomIdAndId}), а аккаунт гарантирован
+     * {@code @CurrentAccount}, поэтому остаётся проверить только авторство либо права создателя комнаты.
+     */
+    private void checkLoreEditPermission(Lore lore, Account account) {
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = lore.getAccount() != null && Objects.equals(lore.getAccount().getId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can delete lore");
+        }
     }
 
     // ====== LIST (pagination + filters) ======
@@ -211,6 +233,12 @@ public class LoreService {
         LoreSummaryRow s = loreRepository.findSummaryByIdAndRoomId(roomId, loreId)
                 .orElseThrow(() -> new NotFoundException("Lore", loreId));
 
+        boolean isCreator = roomSecurityService.isCreator(account);
+        boolean isAuthor = Objects.equals(s.getAccountId(), account.getId());
+        if (!isCreator && !isAuthor) {
+            throw new ForbiddenException("Only author or room creator can edit lore");
+        }
+
         List<Long> ids = List.of(s.getId());
 
         Map<Long, List<IdName>> rolesByLoreId = loreRepository.findRolesByLoreIds(ids).stream()
@@ -261,12 +289,15 @@ public class LoreService {
         // Разворачиваем блоки через BlockService
         String expandedContent = blockService.expandBlocks(s.getContent(), account);
 
+        long questionCount = questionRepository.countUnansweredByLoreId(s.getId());
+
         return loreMapper.toUserResponse(
                 s,
                 expandedContent,
                 isAuthor,
                 !canSeeAll && s.isNonPublic(),
-                tagsByLoreId.getOrDefault(s.getId(), List.of())
+                tagsByLoreId.getOrDefault(s.getId(), List.of()),
+                questionCount
         );
     }
 

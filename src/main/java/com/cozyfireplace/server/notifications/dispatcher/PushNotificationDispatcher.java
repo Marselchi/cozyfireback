@@ -18,12 +18,12 @@ public class PushNotificationDispatcher {
     @Async
     public void sendAsync(Long accountId, NotificationResponse notification) {
 
-        List<String> tokens = tokenService.getActiveTokens(accountId);
+        List<String> fids = tokenService.getActiveFids(accountId);
 
-        if (tokens.isEmpty()) return;
+        if (fids.isEmpty()) return;
 
         MulticastMessage message = MulticastMessage.builder()
-                .addAllTokens(tokens)
+                .addAllFids(fids)
                 .putData("title", notification.title())
                 .putData("type", notification.type().name())
                 .putData("roomUrl", notification.roomName())
@@ -41,7 +41,7 @@ public class PushNotificationDispatcher {
         try {
             BatchResponse response = FirebaseMessaging.getInstance().sendEachForMulticast(message);
 
-            handleResponse(tokens, response);
+            handleResponse(fids, response);
 
         } catch (FirebaseMessagingException e) {
             // лог
@@ -49,7 +49,7 @@ public class PushNotificationDispatcher {
         }
     }
 
-    private void handleResponse(List<String> tokens, BatchResponse response) {
+    private void handleResponse(List<String> fids, BatchResponse response) {
 
         List<SendResponse> responses = response.getResponses();
 
@@ -57,15 +57,15 @@ public class PushNotificationDispatcher {
             SendResponse r = responses.get(i);
 
             if (!r.isSuccessful()) {
-                String failedToken = tokens.get(i);
-                if (isInvalidToken(r.getException())) {
-                    tokenService.deactivateToken(failedToken);
+                String failedFid = fids.get(i);
+                if (isInvalidFid(r.getException())) {
+                    tokenService.deactivateFid(failedFid);
                 }
             }
         }
     }
 
-    private boolean isInvalidToken(FirebaseMessagingException e) {
+    private boolean isInvalidFid(FirebaseMessagingException e) {
         return e.getMessagingErrorCode() == MessagingErrorCode.UNREGISTERED
                 || e.getMessagingErrorCode() == MessagingErrorCode.INVALID_ARGUMENT;
     }

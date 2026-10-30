@@ -43,7 +43,7 @@ public class LoreController {
             responses = {
                     @ApiResponse(responseCode = "201", description = "Created",
                             content = @Content(examples = @ExampleObject(name = "loreId", value = "23"))),
-                    @ApiResponse(responseCode = "404", description = "Room/role/tag not found", content = @Content)
+                    @ApiResponse(responseCode = "404", description = "Room not found, or role/tag not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -76,7 +76,8 @@ public class LoreController {
             description = "Updates a lore entry. The lore identifier is provided as the `loreId` path variable.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Updated"),
-                    @ApiResponse(responseCode = "404", description = "Lore/role/tag not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only author or room creator can modify content", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Lore/role/tag not found in this room", content = @Content)
             }
     )
     @io.swagger.v3.oas.annotations.parameters.RequestBody(
@@ -92,7 +93,6 @@ public class LoreController {
                     }
                     """))
     )
-    //todo: проверочки
     @PutMapping("/{roomId}/{loreId}")
     public ResponseEntity<Void> update(
             @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
@@ -100,25 +100,27 @@ public class LoreController {
             @Valid @RequestBody LoreRequest request,
             @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        loreService.updateLore(loreId, request, account, roomId);
+        loreService.updateLore(roomId, loreId, request, account);
         loreViewService.loreUpdated(loreId);
         return ResponseEntity.noContent().build();
     }
 
     @Operation(
-            summary = "Delete lore",
-            description = "Deletes a lore entry by its ID.",
+            summary = "Delete lore in room",
+            description = "Deletes a lore entry in a room by its ID.",
             responses = {
                     @ApiResponse(responseCode = "204", description = "Deleted"),
-                    @ApiResponse(responseCode = "404", description = "Lore not found", content = @Content)
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only author or room creator can modify content", content = @Content),
+                    @ApiResponse(responseCode = "404", description = "Lore not found in this room", content = @Content)
             }
     )
-    //todo: maybe check rights but to lazy rn
-    @DeleteMapping("/{loreId}")
-    public ResponseEntity<Void> delete(
-            @Parameter(description = "ID of the lore entry", required = true, example = "23") @PathVariable Long loreId
+    @DeleteMapping("/{roomId}/{loreId}")
+    public ResponseEntity<Void> deleteInRoom(
+            @Parameter(description = "ID of the room", required = true, example = "1") @PathVariable Long roomId,
+            @Parameter(description = "ID of the lore entry", required = true, example = "23") @PathVariable Long loreId,
+            @Parameter(hidden = true) @CurrentAccount Account account
     ) {
-        loreService.deleteLore(loreId);
+        loreService.deleteLore(roomId, loreId, account);
         return ResponseEntity.noContent().build();
     }
 
@@ -145,6 +147,7 @@ public class LoreController {
             description = "Returns a LoreResponse (including roles + tags).",
             responses = {
                     @ApiResponse(responseCode = "200", description = "OK"),
+                    @ApiResponse(responseCode = "403", description = "Forbidden: only author or room creator can edit lore", content = @Content),
                     @ApiResponse(responseCode = "404", description = "Lore not found or no access", content = @Content)
             }
     )

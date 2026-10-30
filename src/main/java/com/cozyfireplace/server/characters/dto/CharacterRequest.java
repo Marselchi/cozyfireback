@@ -1,5 +1,6 @@
 package com.cozyfireplace.server.characters.dto;
 
+import com.cozyfireplace.server.lore.blocks.dto.BlockChangesRequest;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import org.hibernate.validator.constraints.Length;
@@ -18,5 +19,6 @@ public record CharacterRequest(
         String description,
         String status,
         String content,
-        Set<Long> roleIds
+        Set<Long> roleIds,
+        BlockChangesRequest blockChanges
 ) implements Serializable { }
